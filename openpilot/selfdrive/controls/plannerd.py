@@ -6,6 +6,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 import openpilot.cereal.messaging as messaging
+from dragonpilot.selfdrive.controls.lib.dp_lon_params import DP_LON, DP_LON_PARAMS_KEYS
 
 
 def main():
@@ -15,6 +16,11 @@ def main():
   params = Params()
   CP = messaging.log_from_bytes(params.get("CarParams", block=True), car.CarParams)
   cloudlog.info("plannerd got CarParams: %s", CP.brand)
+
+  # dp - fill the lon param state the planner reads. Keys come from the generated
+  # DP_LON_PARAMS_KEYS, so features declare params in their own settings file instead
+  # of patching this function.
+  DP_LON.update({k: params.get_bool(k) for k in DP_LON_PARAMS_KEYS})
 
   ldw = LaneDepartureWarning()
   longitudinal_planner = LongitudinalPlanner(CP)

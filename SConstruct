@@ -248,6 +248,17 @@ def prune_cache_dir(target=None, source=None, env=None):
     cache_size -= os.path.getsize(f)
     os.unlink(f)
 
+# dragonpilot settings generation
+if env.Execute('./generate_settings.py') != 0:
+  Exit('generate_settings.py failed')
+
+# dragonpilot car-param generation — runs every scons invocation, idempotent.
+# Rewrites the DP_PARAMS region of opendbc/car/structs.py in place; no target is
+# declared, so scons treats it purely as a pre-build side effect.
+if env.Execute('./generate_dp_params.py') != 0:
+  Exit('generate_dp_params.py failed')
+
+
 # ********** start building stuff **********
 
 # Build common module

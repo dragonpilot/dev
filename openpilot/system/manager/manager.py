@@ -20,6 +20,7 @@ from openpilot.system.athena.registration import register, UNREGISTERED_DONGLE_I
 from openpilot.common.swaglog import cloudlog, add_file_handler
 from openpilot.common.version import get_build_metadata
 from openpilot.common.hardware.hw import Paths
+from openpilot.common.hardware import COMMA_HARDWARE
 
 
 def manager_init() -> None:
@@ -165,8 +166,10 @@ def manager_thread() -> None:
 
     # Exit main loop when uninstall/shutdown/reboot is needed
     shutdown = False
-    for param in ("DoUninstall", "DoShutdown", "DoReboot"):
+    for param in ("DoUninstall", "DoShutdown", "DoReboot", "dp_dev_reset_conf"):
       if params.get_bool(param):
+        if COMMA_HARDWARE and param == "dp_dev_reset_conf":
+          os.system("rm -fr /data/params/d/dp_*")
         shutdown = True
         params.put("LastManagerExitReason", f"{param} {datetime.datetime.now()}", block=True)
         cloudlog.warning(f"Shutting down manager - {param} set")
@@ -201,6 +204,9 @@ def main() -> None:
   elif params.get_bool("DoShutdown"):
     cloudlog.warning("shutdown")
     HARDWARE.shutdown()
+  elif params.get_bool("dp_dev_reset_conf"):
+    cloudlog.warning("reboot")
+    HARDWARE.reboot()
 
 
 if __name__ == "__main__":

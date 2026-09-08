@@ -20,6 +20,7 @@ from opendbc.car.car_helpers import get_car, interfaces
 from opendbc.car.interfaces import CarInterfaceBase, RadarInterfaceBase
 from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
 from openpilot.selfdrive.car.cruise import VCruiseHelper
+from opendbc.car.dp_params import DP_CAR, DP_CAR_PARAMS_KEYS
 
 REPLAY = "REPLAY" in os.environ
 
@@ -81,6 +82,11 @@ class Car:
     self.can_callbacks = can_comm_callbacks(self.can_sock, self.pm.sock['sendcan'])
 
     is_release = self.params.get_bool("IsReleaseBranch")
+
+    # dp - fill the car-param state brand interfaces read. Keys come from the
+    # generated DP_CAR_PARAMS_KEYS, so features declare params in their own settings
+    # file instead of patching this function.
+    DP_CAR.update({k: self.params.get_bool(k) for k in DP_CAR_PARAMS_KEYS})
 
     if CI is None:
       # wait for one pandaState and one CAN packet

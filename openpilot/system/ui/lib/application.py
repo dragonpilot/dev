@@ -21,6 +21,7 @@ from openpilot.common.swaglog import cloudlog
 from openpilot.common.hardware import HARDWARE, PC
 from openpilot.system.ui.lib.multilang import FONT_FALLBACK_LANGUAGES, TRANSLATIONS_DIR, multilang
 from openpilot.common.realtime import Ratekeeper
+from dragonpilot.system.ui.lib.multilang import dp_translation_chars  # dp -
 
 _DEFAULT_FPS = int(os.getenv("FPS", {'tizi': 20}.get(HARDWARE.get_device_type(), 60)))
 FPS_LOG_INTERVAL = 5  # Seconds between logging FPS drops
@@ -692,6 +693,7 @@ class GuiApplication:
     if language not in self._fallback_fonts:
       chars = set(map(chr, range(32, 127))) | set(EXTRA_FONT_CHARS)
       chars.update(TRANSLATIONS_DIR.joinpath(f"app_{language}.po").read_text(encoding="utf-8"))
+      chars.update(dp_translation_chars(language))  # dp -
       codepoints = sorted(map(ord, chars))
       codepoint_buffer = rl.ffi.new("int[]", codepoints)
       with as_file(FONT_DIR) as fspath:
@@ -717,6 +719,7 @@ class GuiApplication:
       unifont_chars.update(language)
       if code not in FONT_FALLBACK_LANGUAGES:
         base_chars.update(TRANSLATIONS_DIR.joinpath(f"app_{code}.po").read_text(encoding="utf-8"))
+        base_chars.update(dp_translation_chars(code))  # dp -
 
     for font_weight_file in FontWeight:
       with as_file(FONT_DIR) as fspath:

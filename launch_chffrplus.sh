@@ -4,6 +4,40 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 source "$DIR/launch_env.sh"
 
+# dp - feature launch hooks.
+#
+# A feature ships ONE file, dragonpilot/launch/NN_<name>.sh, containing its
+# function(s) and appending the entry point to DP_LAUNCH_HOOKS:
+#
+#     set_lite_hw() { ... }
+#     DP_LAUNCH_HOOKS="$DP_LAUNCH_HOOKS set_lite_hw"
+#
+# The NN prefix sets run order, which matters: set_tici_hw exports TICI_DOS/TICI_TRES
+# that later hooks depend on. Order used to be implicit in merge order - the same
+# class of bug the DPFlags bit numbering had. Reserve 00-49 for hardware detection,
+# 50-99 for anything that depends on it.
+#
+# Features never edit this file, so they cannot collide here. Previously each one
+# appended a function body AND a call at two shared anchors, and a bad resolution
+# could leave a function unterminated - swallowing the next definition with no
+# syntax error.
+DP_LAUNCH_HOOKS=""
+for _dp_hook in "$DIR"/dragonpilot/launch/*.sh; do
+  [ -f "$_dp_hook" ] && source "$_dp_hook"
+done
+unset _dp_hook
+
+function dp_run_launch_hooks {
+  local _fn
+  for _fn in $DP_LAUNCH_HOOKS; do
+    if command -v "$_fn" >/dev/null 2>&1; then
+      "$_fn"
+    else
+      echo "dp: launch hook '$_fn' declared but not defined; skipping"
+    fi
+  done
+}
+
 function agnos_init {
   # TODO: move this to agnos
   sudo rm -f /data/etc/NetworkManager/system-connections/*.nmmeta
@@ -80,6 +114,10 @@ function launch {
 
   # hardware specific init
   if [ -f /AGNOS ]; then
+    # dp - feature hooks run before agnos_init so hardware detection (TICI_DOS/
+    # TICI_TRES) is available to everything after it. Relative order among hooks
+    # comes from the NN_ filename prefix in dragonpilot/launch/.
+    dp_run_launch_hooks
     agnos_init
   fi
 

@@ -92,6 +92,33 @@ _services: dict[str, tuple] = {
   "livestreamNarrowRoadEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "livestreamCabinEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "customReservedRawData0": (True, 0.),
+
+  # dp - fork service slots. A feature claims a slot by REPLACING its placeholder
+  # line, e.g.  # dp_service_2  ->  "modelExt": (True, 20.),
+  # Slot N pairs with capnp fork slot N in log.capnp (customReservedN @107+N), so a
+  # feature uses the same number in both files.
+  # Replacing your own line (rather than appending at a shared anchor) is what makes
+  # this merge cleanly across feature branches - keep the blank lines between slots.
+
+  # dp_service_0
+
+  # dp_service_1
+
+  # dp_service_2
+
+  # dp_service_3
+
+  # dp_service_4
+
+  # dp_service_5
+
+  # dp_service_6
+
+  # dp_service_7
+
+  # dp_service_8
+
+  # dp_service_9
 }
 SERVICE_LIST = {name: Service(*vals) for
                 idx, (name, vals) in enumerate(_services.items())}

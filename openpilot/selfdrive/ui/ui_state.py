@@ -13,6 +13,7 @@ from openpilot.selfdrive.ui.lib.prime_state import PrimeState
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.hardware import HARDWARE, PC
 from openpilot.selfdrive.modeld.helpers import usbgpu_compiled
+from dragonpilot.selfdrive.ui.dp_ui_params import apply_dp_ui_params
 
 BACKLIGHT_OFFROAD = 65 if HARDWARE.get_device_type() == "mici" else 50
 PARAM_UPDATE_TIME = 1 / 5.0
@@ -97,6 +98,11 @@ class UIState:
     self._offroad_transition_callbacks: list[Callable[[], None]] = []
     self._engaged_transition_callbacks: list[Callable[[], None]] = []
     self._on_body_changed_callbacks: list[Callable[[], None]] = []
+
+    # dp - apply every declared UI param as an attribute named after its param key
+    # (self.dp_ui_rainbow, ...). Features declare "ui_param": True in their own
+    # settings file instead of adding a read here.
+    apply_dp_ui_params(self, self.params)
 
   def add_offroad_transition_callback(self, callback: Callable[[], None]):
     self._offroad_transition_callbacks.append(callback)
