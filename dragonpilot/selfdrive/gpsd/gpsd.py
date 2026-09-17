@@ -432,7 +432,7 @@ def main():
     gps_service = get_gps_location_service(params)
 
   pm = messaging.PubMaster(["liveGPS"])
-  sm = messaging.SubMaster([gps_service, "livePose"], ignore_alive=[gps_service])
+  sm = messaging.SubMaster([gps_service, "deviceMotion"], ignore_alive=[gps_service])
 
   gps = LiveGPS()
   rk = Ratekeeper(20)
@@ -441,9 +441,9 @@ def main():
     try:
       sm.update(0)
 
-      if sm.logMonoTime["livePose"] > 0:
-        t = sm.logMonoTime["livePose"] * 1e-9
-        log_mono_time = sm.logMonoTime["livePose"]
+      if sm.logMonoTime["deviceMotion"] > 0:
+        t = sm.logMonoTime["deviceMotion"] * 1e-9
+        log_mono_time = sm.logMonoTime["deviceMotion"]
       else:
         log_mono_time = int(rk.frame * 1e9 / 20)
         t = log_mono_time * 1e-9
@@ -451,8 +451,8 @@ def main():
       if sm.updated[gps_service]:
         gps.handle_gps(t, sm[gps_service])
 
-      if sm.updated["livePose"] and sm.valid["livePose"]:
-        gps.handle_pose(sm["livePose"])
+      if sm.updated["deviceMotion"] and sm.valid["deviceMotion"]:
+        gps.handle_pose(sm["deviceMotion"])
 
       gps.update(t)
       pm.send("liveGPS", gps.get_msg(log_mono_time))
