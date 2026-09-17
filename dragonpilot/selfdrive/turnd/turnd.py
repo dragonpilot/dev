@@ -52,7 +52,7 @@ def _migrate_old():
 def _build_sample(t, sm) -> TurnSample:
   gps = sm["liveGPS"]
   cs = sm["carState"]
-  pose = sm["livePose"]
+  pose = sm["deviceMotion"]
 
   gps_valid = bool(sm.valid["liveGPS"]) and gps.status == custom.LiveGPS.Status.valid and gps.horizontalAccuracy < GPS_ACC_MAX
   gear_ok = cs.gearShifter not in (car.CarState.GearShifter.reverse,
@@ -71,7 +71,7 @@ def _run():
   # Always logs in the background (onroad) — no opt-in toggle.
   # liveGPS is in ignore_alive: if gpsd isn't running, sm stays usable and
   # gps_valid just stays False (no arming), so turnd is inert, never broken.
-  sm = messaging.SubMaster(["liveGPS", "carState", "livePose"], ignore_alive=["liveGPS"])
+  sm = messaging.SubMaster(["liveGPS", "carState", "deviceMotion"], ignore_alive=["liveGPS"])
   _migrate_old()
   logger = TurnLogger()
   writer = TurnCsvWriter(TURN_LOG_PATH)

@@ -149,8 +149,8 @@ def read_segment(rlog_path: str) -> list[Sample]:
       if w == "carState":
         cs = msg.carState
         v_ego, lb, rb = cs.vEgo, cs.leftBlinker, cs.rightBlinker
-      elif w == "livePose":
-        yaw = msg.livePose.angularVelocityDevice.z
+      elif w == "deviceMotion":
+        yaw = msg.deviceMotion.angularVelocityDevice.z
       elif w in ("gpsLocation", "gpsLocationExternal"):
         g = getattr(msg, w)
         lat, lon = g.latitude, g.longitude

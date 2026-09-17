@@ -226,10 +226,10 @@ class TestBuildSample(unittest.TestCase):
     cs_msg.carState.leftBlinker = True
     cs_msg.carState.gearShifter = "drive"
 
-    pose_msg = messaging.new_message("livePose", valid=True)
-    pose_msg.livePose.angularVelocityDevice.z = 0.5
+    pose_msg = messaging.new_message("deviceMotion", valid=True)
+    pose_msg.deviceMotion.angularVelocityDevice.z = 0.5
 
-    sm = FakeSubMaster({"liveGPS": gps_msg, "carState": cs_msg, "livePose": pose_msg})
+    sm = FakeSubMaster({"liveGPS": gps_msg, "carState": cs_msg, "deviceMotion": pose_msg})
 
     sample = _build_sample(1.0, sm)
 
@@ -252,7 +252,7 @@ class TestBuildSample(unittest.TestCase):
     sm = FakeSubMaster({
       "liveGPS": messaging.new_message("liveGPS", valid=True),   # default status = uninitialized
       "carState": messaging.new_message("carState", valid=True),
-      "livePose": messaging.new_message("livePose", valid=True),
+      "deviceMotion": messaging.new_message("deviceMotion", valid=True),
     })
     sm.valid["liveGPS"] = False  # gpsd absent
 
