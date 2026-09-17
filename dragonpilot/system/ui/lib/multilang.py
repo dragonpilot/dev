@@ -1,7 +1,8 @@
-import gettext
 from openpilot.system.ui.lib.multilang import (
   multilang as base_multilang,
+  PLURAL_SELECTORS,
   TRANSLATIONS_DIR,
+  load_translations,
   tr_noop,
 )
 
@@ -10,7 +11,9 @@ class DpMultilang:
   """Wrapper that syncs with base multilang and adds dragonpilot translations."""
 
   def __init__(self):
-    self._dragon_translation: gettext.NullTranslations | gettext.GNUTranslations = gettext.NullTranslations()
+    self._translations: dict[str, str] = {}
+    self._plurals: dict[str, list[str]] = {}
+    self._plural_selector = PLURAL_SELECTORS.get('en', lambda n: 0)
     self._loaded_language: str = ""
 
   @property
@@ -24,25 +27,34 @@ class DpMultilang:
     return base_multilang.language
 
   def _ensure_loaded(self):
-    """Reload dragon translations if base language changed."""
+    """Reload dragon translations if base language changed.
+
+    Reads the .po directly, like the base module does. .mo is gitignored and nothing
+    in the build compiles one, so it is never present on a device.
+    """
     current_lang = base_multilang.language
-    if current_lang != self._loaded_language:
-      self._loaded_language = current_lang
-      try:
-        with TRANSLATIONS_DIR.joinpath(f'dragonpilot_{current_lang}.mo').open('rb') as fh:
-          self._dragon_translation = gettext.GNUTranslations(fh)
-      except FileNotFoundError:
-        self._dragon_translation = gettext.NullTranslations()
+    if current_lang == self._loaded_language:
+      return
+    self._loaded_language = current_lang
+    try:
+      po_path = TRANSLATIONS_DIR.joinpath(f'dragonpilot_{current_lang}.po')
+      self._translations, self._plurals = load_translations(po_path)
+    except FileNotFoundError:
+      self._translations, self._plurals = {}, {}
+    self._plural_selector = PLURAL_SELECTORS.get(current_lang, lambda n: 0)
 
   def tr(self, text: str) -> str:
     self._ensure_loaded()
-    result = self._dragon_translation.gettext(text)
-    return result if result != text else base_multilang.tr(text)
+    return self._translations.get(text) or base_multilang.tr(text)
 
   def trn(self, singular: str, plural: str, n: int) -> str:
     self._ensure_loaded()
-    result = self._dragon_translation.ngettext(singular, plural, n)
-    return result if result not in (singular, plural) else base_multilang.trn(singular, plural, n)
+    forms = self._plurals.get(singular)
+    if forms:
+      idx = self._plural_selector(n)
+      if idx < len(forms) and forms[idx]:
+        return forms[idx]
+    return base_multilang.trn(singular, plural, n)
 
 
 def dp_translation_chars(code: str) -> set[str]:
