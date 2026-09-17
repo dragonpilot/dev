@@ -26,8 +26,13 @@ def get_version(path: str = BASEDIR) -> str:
 
 
 def get_release_notes(path: str = BASEDIR) -> str:
-  with open(os.path.join(path, "RELEASES.md")) as f:
-    return f.read().split('\n\n', 1)[0]
+  # dp - CHANGELOGS.md only ships on the release branches; the value is never
+  # displayed (the UI reads the Updater*ReleaseNotes params), so a miss is not fatal.
+  try:
+    with open(os.path.join(path, "CHANGELOGS.md")) as f:
+      return f.read().split('\n\n', 1)[0]
+  except FileNotFoundError:
+    return ""
 
 
 @cache
