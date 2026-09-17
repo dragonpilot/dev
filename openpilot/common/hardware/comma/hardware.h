@@ -62,7 +62,12 @@ public:
 
   static void set_ir_power(int percent) {
     auto device = get_device_type();
-    if (device == cereal::InitData::DeviceType::TIZI) {
+    // dp - 0.11.1 skipped TICI here too. Upstream dropped that arm in 0.11.2 only
+    // because removing tici from device_map made it unreachable, not because comma
+    // three gained IR LEDs at these paths. We put tici back, so the arm comes back
+    // with it; hardware.py:113 still skips both.
+    if (device == cereal::InitData::DeviceType::TICI ||
+        device == cereal::InitData::DeviceType::TIZI) {
       return;
     }
 
