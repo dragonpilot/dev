@@ -28,6 +28,10 @@ const int SEGMENT_LENGTH = LOGGERD_TEST ? atoi(getenv("LOGGERD_SEGMENT_LENGTH"))
 
 inline int livestream_width() {
   switch (Hardware::get_device_type()) {
+    // dp - tici shares tizi's 1928x1208 camera (camera.py maps ar0231/ox03c10 to the
+    // same config for both), so it takes the same downscale. Upstream has no TICI case
+    // only because 0.11.2 dropped tici from device_map entirely.
+    case cereal::InitData::DeviceType::TICI:
     case cereal::InitData::DeviceType::TIZI: return 1152;
     case cereal::InitData::DeviceType::MICI: return 1280;
     default: return -1;
@@ -36,6 +40,7 @@ inline int livestream_width() {
 
 inline int livestream_height() {
   switch (Hardware::get_device_type()) {
+    case cereal::InitData::DeviceType::TICI:
     case cereal::InitData::DeviceType::TIZI:
     case cereal::InitData::DeviceType::MICI: return 720;
     default: return -1;
