@@ -368,8 +368,11 @@ class Updater:
       if x is not None:
         name = x.group('branch_name')
 
-        # Check for version X.Y.Z at the start (ignores trailing suffixes like -pre-build)
-        m = re.match(r'^(\d+)\.(\d+)\.(\d+)', name)
+        # A pinned release branch: the WHOLE name must be a version, optionally with a
+        # suffix (0.11.1, 0.11.1-pre-build). A prefix match accepted anything starting
+        # with digits, which since the '<version>/' build namespace means every source
+        # branch - 0.11.2/min-feat/lat/alka and 57 others would be offered as channels.
+        m = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)(?:-[\w.-]+)?', name)
 
         # Logic:
         # 1. Allow a named channel (see `channels` above)
