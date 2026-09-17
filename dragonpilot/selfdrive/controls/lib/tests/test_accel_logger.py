@@ -49,7 +49,7 @@ def _sm(**over):
     cs.update(over)
     return {
         'carState': SimpleNamespace(**cs),
-        'radarState': SimpleNamespace(leadOne=SimpleNamespace(status=False, dRel=0.0)),
+        'radarState': SimpleNamespace(leadOne=SimpleNamespace(present=False, dRel=0.0)),
     }
 
 
