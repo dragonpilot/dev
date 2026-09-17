@@ -33,7 +33,13 @@ class CarInterface(CarInterfaceBase):
       else:
         ret.networkLocation = NetworkLocation.fwdCamera
 
-      ret.dashcamOnly = is_release  # Release support needs HCA timeout fix, safety validation
+      # The PQ port is in dashcam-only mode due to a fixed six-minute maximum timer on HCA steering. An unsupported
+      # EPS flash update to work around this timer, and enable steering down to zero, is available from:
+      #   https://github.com/pd0wm/pq-flasher
+      # It is documented in a four-part blog series:
+      #   https://blog.willemmelching.nl/carhacking/2022/01/02/vw-part1/
+      # Panda ALLOW_DEBUG firmware required.
+      # ret.dashcamOnly = is_release  # Release support needs HCA timeout fix, safety validation
 
     elif ret.flags & VolkswagenFlags.MLB:
       # Set global MLB parameters
@@ -139,5 +145,14 @@ class CarInterface(CarInterfaceBase):
     if CAN.pt >= 4:
       safety_configs.insert(0, get_safety_config(structs.CarParams.SafetyModel.noOutput))
     ret.safetyConfigs = safety_configs
+
+    # dp - imported here rather than at the top so this feature's whole footprint in this
+    # upstream file is one hunk: dropping the feature drops the import with it, and the
+    # other vag features that patch this function never conflict on a shared import.
+    from opendbc.car.dp_params import DP_CAR
+    if DP_CAR["dp_vag_a0_sng"]:
+      ret.flags |= VolkswagenFlags.A0SnG.value
+    if DP_CAR["dp_vag_avoid_eps_lockout"]:
+      ret.flags |= VolkswagenFlags.AVOID_EPS_LOCKOUT.value
 
     return ret

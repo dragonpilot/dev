@@ -62,13 +62,31 @@ class CarInterface(CarInterfaceBase):
     if Ecu.hybrid in found_ecus:
       ret.flags |= ToyotaFlags.HYBRID.value
 
+    # 0x343 should not be present on bus 2 on non-TSS2 cars unless we are re-routing DSU
+    dsu_bypass = False
+    if (0x343 in fingerprint[2] or 0x4CB in fingerprint[2]) and not (ret.flags & ToyotaFlags.TSS2):
+      print("----------------------------------------------")
+      print("dragonpilot: DSU_BYPASS detected!")
+      print("----------------------------------------------")
+      # rick - disable for now, breaks TOYOTA_AVALON_2019 model tests.
+      # dsu_bypass = True
+      # ret.flags |= ToyotaFlags.DSU_BYPASS.value
+    if 0x23 in fingerprint[0]:
+      print("----------------------------------------------")
+      print("dragonpilot: ZSS detected!")
+      print("----------------------------------------------")
+      ret.flags |= ToyotaFlags.ZSS.value
+
     if candidate == CAR.TOYOTA_PRIUS:
       stop_and_go = True
       # Only give steer angle deadzone to for bad angle sensor prius
       for fw in car_fw:
         if fw.ecu == "eps" and not fw.fwVersion == b'8965B47060\x00\x00\x00\x00\x00\x00':
-          ret.steerActuatorDelay = 0.25
-          CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning, steering_angle_deadzone_deg=0.2)
+          if ret.flags & ToyotaFlags.ZSS.value:
+            CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
+          else:
+            ret.steerActuatorDelay = 0.25
+            CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning, steering_angle_deadzone_deg=0.2)
         # 2021+ TSS2 steering rack swapped into a TSS-P car, not supported
         if fw.ecu == "eps" and fw.fwVersion == b'8965B47070\x00\x00\x00\x00\x00\x00':
           ret.dashcamOnly = True
@@ -101,13 +119,43 @@ class CarInterface(CarInterfaceBase):
       if alpha_long:
         ret.flags |= ToyotaFlags.DISABLE_RADAR.value
 
+      # radar-filter is only fitted to radar-ACC cars (e.g. CHR/RAV4 TSS2). Gate on the
+      # flag so this cannot also fire for a smartDSU, which is detected on 0x2FF too and
+      # guards on `not (RADAR_ACC | NO_DSU)` - the two are mutually exclusive by design.
+      if (ret.flags & ToyotaFlags.RADAR_ACC) and (0x2FF in fingerprint[0] or 0x2AA in fingerprint[0]):
+        print("----------------------------------------------")
+        print("dragonpilot: RADAR_FILTER detected!")
+        print("----------------------------------------------")
+        ret.alphaLongitudinalAvailable = False
+        ret.flags |= ToyotaFlags.RADAR_FILTER.value | ToyotaFlags.DISABLE_RADAR.value
+    sdsu_active = False
+    if not (ret.flags & (ToyotaFlags.RADAR_ACC | ToyotaFlags.NO_DSU)) and 0x2FF in fingerprint[0]:
+      print("----------------------------------------------")
+      print("dragonpilot: SDSU detected!")
+      print("----------------------------------------------")
+
+      sdsu_active = True
+      stop_and_go = True
+
+      ret.flags |= ToyotaFlags.SDSU.value
+      ret.alphaLongitudinalAvailable = False
+
     # openpilot longitudinal enabled by default:
     #  - TSS2 cars with camera sending ACC_CONTROL where we can block it
     # openpilot longitudinal behind alpha long toggle:
     #  - TSS2 radar ACC cars (disables radar)
 
     ret.openpilotLongitudinalControl = ((bool(ret.flags & ToyotaFlags.TSS2) and not (ret.flags & ToyotaFlags.RADAR_ACC)) or
-                                        bool(ret.flags & ToyotaFlags.DISABLE_RADAR.value))
+                                        bool(ret.flags & ToyotaFlags.DISABLE_RADAR.value)) or \
+      sdsu_active or dsu_bypass
+
+    # dp - imported here rather than at the top so this feature's whole footprint in this
+    # upstream file is one hunk: dropping the feature drops the import with it, and the
+    # other toyota features that patch this function never conflict on a shared import.
+    from opendbc.car.dp_params import DP_CAR
+    if DP_CAR["dp_toyota_stock_lon"]:
+      ret.openpilotLongitudinalControl = False
+      ret.alphaLongitudinalAvailable = False
 
     ret.autoResumeSng = ret.openpilotLongitudinalControl
 
@@ -125,12 +173,22 @@ class CarInterface(CarInterfaceBase):
       if ret.flags & ToyotaFlags.HYBRID.value:
         ret.longitudinalActuatorDelay = 0.05
 
+    # dp - imported here rather than at the top so this feature's whole footprint in this
+    # upstream file is one hunk: dropping the feature drops the import with it, and the
+    # other toyota features that patch this function never conflict on a shared import.
+    from opendbc.car.dp_params import DP_CAR
+    if DP_CAR["dp_toyota_door_auto_lock_unlock"]:
+      ret.flags |= ToyotaFlags.LOCK_CTRL.value
+      ret.safetyConfigs[0].safetyParam |= ToyotaSafetyFlags.LOCK_CTRL.value
+    if DP_CAR["dp_toyota_tss1_sng"]:
+      ret.flags |= ToyotaFlags.TSS1_SNG.value
+
     return ret
 
   @staticmethod
   def init(CP, can_recv, can_send, communication_control=None):
     # disable radar if alpha longitudinal toggled on radar-ACC car
-    if CP.flags & ToyotaFlags.DISABLE_RADAR.value:
+    if not CP.flags & ToyotaFlags.RADAR_FILTER.value and CP.flags & ToyotaFlags.DISABLE_RADAR.value:
       if communication_control is None:
         communication_control = bytes([uds.SERVICE_TYPE.COMMUNICATION_CONTROL, uds.CONTROL_TYPE.ENABLE_RX_DISABLE_TX, uds.MESSAGE_TYPE.NORMAL])
       disable_ecu(can_recv, can_send, bus=0, addr=0x750, sub_addr=0xf, com_cont_req=communication_control)

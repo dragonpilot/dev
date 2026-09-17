@@ -150,15 +150,41 @@ class CarInterface(CarInterfaceBase):
     if candidate in (CAR.KIA_OPTIMA_H,):
       ret.dashcamOnly = True
 
+    # w/ SMDPS, allow steering to 0
+    if 0x2AA in fingerprint[0]:
+      ret.minSteerSpeed = 0.
+      print("----------------------------------------------")
+      print("dragonpilot: SMDPS detected!")
+    # dp - ESCC radar interceptor: keeps stock radar + AEB alive while op does longitudinal.
+    # Blocks the radar's SCC11-14, re-broadcasts AEB state + lead on 0x2AB, passes FCA11/12 through.
+    if not (ret.flags & HyundaiFlags.CANFD) and 0x2AB in fingerprint[0]:
+      ret.flags |= HyundaiFlags.ESCC.value
+      ret.safetyConfigs[-1].safetyParam |= HyundaiSafetyFlags.ESCC.value
+      if ret.radarUnavailable:
+        # no radar tracks fingerprinted -> radar interface uses the single lead in 0x2AB
+        ret.flags |= HyundaiFlags.ESCC_LEAD.value
+        ret.radarUnavailable = False
+      print("----------------------------------------------")
+      print("dragonpilot: ESCC detected!")
+      print("----------------------------------------------")
+
     return ret
 
   @staticmethod
   def init(CP, can_recv, can_send, communication_control=None):
+    # dp - ESCC: radar stays alive; ask it for full track output (persistent, used next drive)
+    # - startup init only, deinit must not re-trigger the UDS write. Checked here, before
+    # communication_control gets defaulted below, so deinit's non-None re-entry into init()
+    # (it always passes its own communication_control) correctly fails this guard.
+    if communication_control is None and CP.flags & HyundaiFlags.ESCC and CP.flags & HyundaiFlags.MANDO_RADAR:
+      from opendbc.car.hyundai import escc
+      escc.enable_radar_tracks(can_recv, can_send, bus=0, addr=0x7d0)
+
     # 0x80 silences response
     if communication_control is None:
       communication_control = bytes([uds.SERVICE_TYPE.COMMUNICATION_CONTROL, 0x80 | uds.CONTROL_TYPE.DISABLE_RX_DISABLE_TX, uds.MESSAGE_TYPE.NORMAL])
 
-    if CP.openpilotLongitudinalControl and not (CP.flags & (HyundaiFlags.CANFD_CAMERA_SCC | HyundaiFlags.CAMERA_SCC)):
+    if CP.openpilotLongitudinalControl and not (CP.flags & (HyundaiFlags.CANFD_CAMERA_SCC | HyundaiFlags.CAMERA_SCC | HyundaiFlags.ESCC)):
       addr, bus = 0x7d0, CanBus(CP).ECAN if CP.flags & HyundaiFlags.CANFD else 0
       if CP.flags & HyundaiFlags.CANFD_LKA_STEER_MSG.value:
         addr, bus = 0x730, CanBus(CP).ECAN

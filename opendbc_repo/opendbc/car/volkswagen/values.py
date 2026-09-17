@@ -230,6 +230,8 @@ class VolkswagenFlags(IntFlag):
   MEB = 16
   MEB_GEN2 = 128
 
+  A0SnG = 2 ** 8
+  AVOID_EPS_LOCKOUT = 2 ** 9
 
 @dataclass
 class VolkswagenMLBPlatformConfig(PlatformConfig):

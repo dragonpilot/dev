@@ -63,6 +63,10 @@ class CarState(CarStateBase):
 
     self.params = CarControllerParams(CP)
 
+    # dp - ESCC: interceptor state (AEB mirror for our SCC12 on non-FCA cars)
+    from opendbc.car.hyundai.escc import ESCC
+    self.escc = ESCC(CP.flags)
+
   def recent_button_interaction(self) -> bool:
     # On some newer model years, the CANCEL button acts as a pause/resume button based on the PCM state
     # To avoid re-engaging when openpilot cancels, check user engagement intention via buttons
@@ -169,6 +173,23 @@ class CarState(CarStateBase):
       scc_warning = cp_cruise.vl["SCC12"]["TakeOverReq"] == 1  # sometimes only SCC system shows an FCW
       aeb_braking = cp_cruise.vl[aeb_src]["CF_VSM_DecCmdAct"] != 0 or cp_cruise.vl[aeb_src][aeb_sig] != 0
       ret.stockFcw = (aeb_warning or scc_warning) and not aeb_braking
+      ret.stockAeb = aeb_warning and aeb_braking
+
+    # dp - ESCC: AEB state comes from the interceptor; radar is alive but its SCC12 is blocked
+    if self.escc.enabled:
+      if self.CP.flags & HyundaiFlags.USE_FCA.value:
+        # AEB actuates via FCA11, which passes through the interceptor untouched
+        aeb_warning = cp.vl["FCA11"]["CF_VSM_Warn"] != 0
+        aeb_braking = cp.vl["FCA11"]["CF_VSM_DecCmdAct"] != 0 or cp.vl["FCA11"]["FCA_CmdAct"] != 0
+      else:
+        # AEB actuates via SCC12, which we now transmit: capture the radar's live
+        # AEB state for splicing back in (hyundaican.create_acc_commands)
+        from opendbc.car.hyundai.escc import EsccBus
+        cp_escc = can_parsers[EsccBus.escc]
+        self.escc.update_states(cp_escc)
+        aeb_warning = cp_escc.vl["ESCC"]["CF_VSM_Warn_SCC12"] != 0
+        aeb_braking = cp_escc.vl["ESCC"]["CF_VSM_DecCmdAct_SCC12"] != 0 or cp_escc.vl["ESCC"]["AEB_CmdAct"] != 0
+      ret.stockFcw = aeb_warning and not aeb_braking
       ret.stockAeb = aeb_warning and aeb_braking
 
     if self.CP.enableBsm:
@@ -332,7 +353,14 @@ class CarState(CarStateBase):
     if CP.flags & HyundaiFlags.CANFD:
       return self.get_can_parsers_canfd(CP)
 
-    return {
+    parsers = {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 0),
       Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], 2),
     }
+
+    # dp - ESCC: interceptor message has its own DBC, so it needs its own parser (see EsccBus)
+    if self.escc.enabled:
+      from opendbc.car.hyundai.escc import EsccBus
+      parsers[EsccBus.escc] = self.escc.get_parser()
+
+    return parsers

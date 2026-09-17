@@ -66,6 +66,7 @@ class HyundaiSafetyFlags(IntFlag):
   CANFD_LKA_STEER_MSG_ALT = 128
   FCEV_GAS = 256
   ALT_LIMITS_2 = 512
+  ESCC = 1024  # dp - ESCC radar interceptor
 
 
 # Hyundai/Kia/Genesis SCC (Smart Cruise Control) and steering architecture:
@@ -146,6 +147,11 @@ class HyundaiFlags(IntFlag):
   FCEV = 2 ** 25
 
   ALT_LIMITS_2 = 2 ** 26
+
+  # dp - ESCC radar interceptor present (0x2AB on bus 0); stock radar + AEB stay alive
+  ESCC = 2 ** 27
+  # dp - ESCC without fingerprinted radar tracks: radar interface uses the single lead in 0x2AB
+  ESCC_LEAD = 2 ** 28
 
 
 @dataclass

@@ -238,6 +238,47 @@ class TestHyundaiLongitudinalSafety(HyundaiLongitudinalBase, TestHyundaiSafety):
     self.assertFalse(self._tx(self._accel_msg(0, aeb_decel=1.0)))
 
 
+class TestHyundaiLongitudinalEsccSafety(HyundaiLongitudinalBase, TestHyundaiSafety):
+  # dp - ESCC: FCA11 (0x38D), FCA12 (0x483) and radar UDS (0x7D0) are NOT sent - the live
+  # radar owns them. SCC12 AEB signals ARE allowed - we relay the radar's AEB state.
+  TX_MSGS = [[0x340, 0], [0x4F1, 0], [0x485, 0], [0x420, 0], [0x421, 0], [0x50A, 0], [0x389, 0], [0x4A2, 0]]
+
+  FWD_BLACKLISTED_ADDRS = {2: [0x340, 0x485, 0x421, 0x420, 0x50A, 0x389]}
+  RELAY_MALFUNCTION_ADDRS = {0: (0x340, 0x485, 0x421, 0x420, 0x50A, 0x389)}  # LKAS11, LFAHDA_MFC, SCC12, SCC11, SCC13, SCC14
+
+  def setUp(self):
+    self.packer = CANPackerSafety("hyundai_can_generated")
+    self.safety = libsafety_py.libsafety
+    self.safety.set_safety_hooks(CarParams.SafetyModel.hyundai, HyundaiSafetyFlags.LONG | HyundaiSafetyFlags.ESCC)
+    self.safety.init_tests()
+
+  def _accel_msg(self, accel, aeb_req=False, aeb_decel=0):
+    values = {
+      "aReqRaw": accel,
+      "aReqValue": accel,
+      "AEB_CmdAct": int(aeb_req),
+      "CR_VSM_DecCmd": aeb_decel,
+    }
+    return self.packer.make_can_msg_safety("SCC12", self.SCC_BUS, values)
+
+  # no radar ECU is disabled with ESCC - the base-class expectations don't apply
+  def test_tester_present_allowed(self):
+    pass
+
+  def test_disabled_ecu_alive(self):
+    pass
+
+  def test_aeb_allowed_in_scc12(self):
+    # relaying the radar's AEB state through our SCC12 must pass the safety check
+    self.safety.set_controls_allowed(True)
+    self.assertTrue(self._tx(self._accel_msg(0, aeb_req=True)))
+    self.assertTrue(self._tx(self._accel_msg(0, aeb_decel=1.0)))
+
+  def test_no_fca11_tx(self):
+    values = {"CR_FCA_Alive": 0, "FCA_Status": 2}
+    self.assertFalse(self._tx(self.packer.make_can_msg_safety("FCA11", 0, values)))
+
+
 class TestHyundaiLongitudinalSafetyCameraSCC(HyundaiLongitudinalBase, TestHyundaiSafety):
   TX_MSGS = [[0x340, 0], [0x4F1, 2], [0x485, 0], [0x420, 0], [0x421, 0], [0x50A, 0], [0x389, 0], [0x4A2, 0]]
 

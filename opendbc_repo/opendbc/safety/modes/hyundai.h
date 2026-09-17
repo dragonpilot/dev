@@ -209,8 +209,8 @@ static bool hyundai_tx_hook(const CANPacket_t *msg) {
 
     violation |= longitudinal_accel_checks(desired_accel_raw, HYUNDAI_LONG_LIMITS);
     violation |= longitudinal_accel_checks(desired_accel_val, HYUNDAI_LONG_LIMITS);
-    violation |= (aeb_decel_cmd != 0);
-    violation |= aeb_req;
+    violation |= (aeb_decel_cmd != 0) && !hyundai_escc;  // dp - ESCC relays radar AEB
+    violation |= aeb_req && !hyundai_escc;               // dp - ESCC relays radar AEB
 
     if (violation) {
       tx = false;
@@ -269,6 +269,11 @@ static safety_config hyundai_init(uint16_t param) {
     HYUNDAI_LONG_COMMON_TX_MSGS(2)
   };
 
+  // dp - ESCC: no FCA11/FCA12/radar-UDS - the live radar owns them
+  static const CanMsg HYUNDAI_LONG_ESCC_TX_MSGS[] = {
+    HYUNDAI_LONG_COMMON_TX_MSGS(0)
+  };
+
   hyundai_common_init(param);
   hyundai_legacy = false;
 
@@ -289,7 +294,9 @@ static safety_config hyundai_init(uint16_t param) {
     } else {
       SET_RX_CHECKS(hyundai_long_rx_checks, ret);
     }
-    if (hyundai_camera_scc) {
+    if (hyundai_escc) {  // dp
+      SET_TX_MSGS(HYUNDAI_LONG_ESCC_TX_MSGS, ret);
+    } else if (hyundai_camera_scc) {
       SET_TX_MSGS(HYUNDAI_CAMERA_SCC_LONG_TX_MSGS, ret);
     } else {
       SET_TX_MSGS(HYUNDAI_LONG_TX_MSGS, ret);

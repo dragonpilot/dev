@@ -21,6 +21,8 @@ from openpilot.tools.lib.url_file import URLFile
 source_segments = [
   ("HYUNDAI", "02c45f73a2e5c6e9|2021-01-01--19-08-22--1"),     # HYUNDAI.HYUNDAI_SONATA
   ("HYUNDAI2", "d545129f3ca90f28|2022-11-07--20-43-08--3"),    # HYUNDAI.HYUNDAI_KIA_EV6 (+ QCOM GPS)
+  # dp - TODO: add an ESCC route segment once one is recorded on-car
+  # ("HYUNDAI_ESCC", "<dongle_id>|<route>--<segment>"),  # HYUNDAI.* with ESCC interceptor (0x2AB)
   ("TOYOTA", "0982d79ebb0de295|2021-01-04--17-13-21--13"),     # TOYOTA.TOYOTA_PRIUS
   ("TOYOTA2", "0982d79ebb0de295|2021-01-03--20-03-36--6"),     # TOYOTA.TOYOTA_RAV4
   ("TOYOTA3", "8011d605be1cbb77|000000cc--8e8d8ec716--6"),     # TOYOTA.TOYOTA_COROLLA_TSS2

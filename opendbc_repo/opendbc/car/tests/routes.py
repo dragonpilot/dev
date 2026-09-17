@@ -277,6 +277,7 @@ routes = [
   CarTestRoute("6719965b0e1d1737/2023-02-09--22-44-05", TOYOTA.TOYOTA_CHR_TSS2),  # hybrid
   CarTestRoute("6719965b0e1d1737/2023-08-29--06-40-05", TOYOTA.TOYOTA_CHR_TSS2),  # hybrid, openpilot longitudinal, radar disabled
   CarTestRoute("14623aae37e549f3/2021-10-24--01-20-49", TOYOTA.TOYOTA_PRIUS_V),
+  CarTestRoute("ea8fbe72b96a185c|2023-02-22--09-20-34", TOYOTA.TOYOTA_CHR_TSS2),  # openpilot longitudinal, with Radar Filter
 
   CarTestRoute("aebd8f1d4ea16066/00000009--b31e222338", VOLKSWAGEN.VOLKSWAGEN_ID4_MK1),
   CarTestRoute("f73c01590368ee5b/00000aea--dc31ef6d5f", VOLKSWAGEN.VOLKSWAGEN_ID4_MK2),
