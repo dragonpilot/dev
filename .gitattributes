@@ -1,0 +1,5 @@
+# This file's PRESENCE is the release sentinel, not its contents.
+# SConstruct: release = not os.path.exists(File('#.gitattributes').abspath)
+# Present  -> not a release -> --extras defaults ON (builds replay, cabana, jotpluggler).
+# Absent   -> release build -> extras off. tools/release/release_files.py deletes it,
+#             which is how a release branch turns extras off. Do not delete it here.
