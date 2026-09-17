@@ -26,13 +26,6 @@ env = Environment(
 if system == "Darwin":
   env.PrependENVPath('PATH', '/opt/homebrew/bin')
 
-if GetOption('ubsan'):
-  flags = [
-    "-fsanitize=undefined",
-    "-fno-sanitize-recover=undefined",
-  ]
-  env['CFLAGS'] += flags
-  env['LINKFLAGS'] += flags
 
 panda = env.SharedObject("panda.os", "panda.c")
 libpanda = env.SharedLibrary("libpanda.so", [panda])
