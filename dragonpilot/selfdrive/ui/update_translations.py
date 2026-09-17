@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import sys
 from openpilot.common.basedir import BASEDIR
 from dragonpilot.system.ui.lib.multilang import TRANSLATIONS_DIR, multilang
 
@@ -21,6 +22,30 @@ def update_translations():
 
   ret = os.system(cmd)
   assert ret == 0
+
+  # Also extract dashy's web UI strings (JavaScript) into the same template.
+  # The frontend now lives in the separate dashy-web repo; only its built
+  # dist/ is vendored here (where tr() calls are minified and unscannable),
+  # so scan dashy-web's src and append the tr()/tr_noop() literals via
+  # --join-existing. Override the location with DASHY_SRC; if the source
+  # isn't present (e.g. dashy-web isn't checked out), this is skipped but
+  # loudly warns, since a silent skip here would let msgmerge strip every
+  # dashy string from all .po files with no error.
+  dashy_src = os.environ.get("DASHY_SRC") or os.path.join(BASEDIR, "..", "dashy-web", "src")
+  dashy_src = os.path.realpath(dashy_src)
+  if os.path.isdir(dashy_src):
+    js_files = [os.path.relpath(os.path.join(root, fn), dashy_src)
+                for root, _, filenames in os.walk(dashy_src)
+                for fn in filenames if fn.endswith(".js")]
+    if js_files:
+      cmd = ("xgettext -L JavaScript --keyword=tr --keyword=tr_noop --from-code=UTF-8 "
+             "--join-existing "
+             f"-D {dashy_src} -o {POT_FILE} {' '.join(js_files)}")
+      ret = os.system(cmd)
+      assert ret == 0
+  else:
+    msg = f"update_translations: WARNING - dashy-web source not found at {dashy_src}, skipping dashy UI string extraction (set DASHY_SRC to override)"
+    print(msg, file=sys.stderr)
 
   # Generate/update translation files for each language
   for name in multilang.languages.values():

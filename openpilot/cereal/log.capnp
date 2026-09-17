@@ -2632,15 +2632,15 @@ struct Event {
     # DO change the name of the field and struct
     # DON'T change the ID (e.g. @107)
     # DON'T change which struct it points to
-    customReserved0 @107 :Custom.CustomReserved0;
+    controlsStateExt @107 :Custom.ControlsStateExt;
 
-    customReserved1 @108 :Custom.CustomReserved1;
+    carStateExt @108 :Custom.CarStateExt;
 
-    customReserved2 @109 :Custom.CustomReserved2;
+    modelExt @109 :Custom.ModelExt;
 
-    customReserved3 @110 :Custom.CustomReserved3;
+    dashyState @110 :Custom.DashyState;
 
-    customReserved4 @111 :Custom.CustomReserved4;
+    liveGPS @111 :Custom.LiveGPS;
 
     customReserved5 @112 :Custom.CustomReserved5;
 

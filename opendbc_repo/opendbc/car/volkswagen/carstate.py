@@ -142,6 +142,9 @@ class CarState(CarStateBase):
 
     ret.lowSpeedAlert = self.update_low_speed_alert(ret.vEgo)
 
+    # dp - ALKA: use ACC main state
+    self.lkas_on = ret.cruiseState.available
+
     self.frame += 1
     return ret
 
@@ -231,6 +234,9 @@ class CarState(CarStateBase):
     ret.espDisabled = bool(pt_cp.vl["Bremse_1"]["BR1_ESPASR_passive"])
 
     ret.lowSpeedAlert = self.update_low_speed_alert(ret.vEgo)
+
+    # dp - ALKA: use ACC main state
+    self.lkas_on = ret.cruiseState.available
 
     self.frame += 1
     return ret

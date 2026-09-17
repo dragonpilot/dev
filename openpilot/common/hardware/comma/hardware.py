@@ -15,6 +15,8 @@ from openpilot.common.hardware.base import HardwareBase, ThermalConfig, ThermalZ
 from openpilot.common.hardware.comma.pins import GPIO
 from openpilot.common.hardware.comma.amplifier import Amplifier
 
+LITE = os.getenv("LITE") is not None
+
 MODEM_STATE_PATH = "/dev/shm/modem"
 
 NetworkType = log.DeviceState.NetworkType
@@ -70,7 +72,7 @@ class HardwareComma(HardwareBase):
 
   @cached_property
   def amplifier(self):
-    if self.get_device_type() == "mici":
+    if self.get_device_type() == "mici" or LITE:
       return None
     return Amplifier()
 
@@ -108,7 +110,7 @@ class HardwareComma(HardwareBase):
       return int(f.read())
 
   def set_ir_power(self, percent: int):
-    if self.get_device_type() == "tizi":
+    if self.get_device_type() in ("tici", "tizi"):
       return
 
     value = int((percent / 100) * 300)
@@ -161,7 +163,7 @@ class HardwareComma(HardwareBase):
     return self.get_modem_state().get('imei', '')
 
   def get_network_info(self):
-    if self.get_device_type() == "mici":
+    if self.get_device_type() == "mici" or LITE:
       return None
 
     ms = self.get_modem_state()
@@ -242,6 +244,8 @@ class HardwareComma(HardwareBase):
     return super().get_network_metered(network_type)
 
   def get_modem_temperatures(self):
+    if LITE:
+      return []
     return self.get_modem_state().get('temperatures', [])
 
   def get_current_power_draw(self):
@@ -304,7 +308,7 @@ class HardwareComma(HardwareBase):
     if self.amplifier is not None:
       self.amplifier.set_global_shutdown(amp_disabled=powersave_enabled)
       if not powersave_enabled:
-        self.amplifier.initialize_configuration()
+        self.amplifier.initialize_configuration(self.get_device_type())
 
     # *** CPU config ***
 
@@ -342,7 +346,7 @@ class HardwareComma(HardwareBase):
 
   def initialize_hardware(self):
     if self.amplifier is not None:
-      self.amplifier.initialize_configuration()
+      self.amplifier.initialize_configuration(self.get_device_type())
 
     # Allow hardwared to write engagement status to kmsg
     subprocess.run("sudo chmod a+w /dev/kmsg", shell=True)
@@ -384,6 +388,10 @@ class HardwareComma(HardwareBase):
 
     # pandad core
     affine_irq(3, "spi_geni")         # SPI
+    # rick - for c3
+    if "tici" in self.get_device_type():
+      affine_irq(3, "xhci-hcd:usb3")  # aux panda USB (or potentially anything else on USB)
+      affine_irq(3, "xhci-hcd:usb1")  # internal panda USB (also modem)
     try:
       pid = subprocess.check_output(["pgrep", "-f", "spi0"], encoding='utf8').strip()
       subprocess.call(["sudo", "chrt", "-f", "-p", "1", pid])

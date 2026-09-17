@@ -191,6 +191,17 @@ class CarState(CarStateBase):
                         *create_button_events(self.main_buttons[-1], prev_main_buttons, {1: ButtonType.mainCruise}),
                         *create_button_events(self.lda_button, prev_lda_button, {1: ButtonType.lkas})]
 
+    # dp - ALKA: direct tracking - lkas_on follows acc_main (cruiseState.available), but
+    # only when acc_main is real. Under openpilot longitudinal the stock SCC is off, so
+    # SCC11.MainMode_ACC - the bit panda gates ALKA on - reads 0 for the whole drive
+    # (measured on route 012c95f06918eca4: 0 across all 6164 samples), and
+    # cruiseState.available falls back to TCS13.ACCEnable, which is true the whole drive.
+    # Claiming armed there makes openpilot command lateral that panda rejects every frame:
+    # controls mismatch and a climbing safety_tx_blocked, with no steering either way.
+    # panda cannot arm ALKA in this mode at all (safety/modes/hyundai.h gates its lkas_on
+    # update on !hyundai_longitudinal), so report not-armed and agree with it.
+    self.lkas_on = ret.cruiseState.available and not self.CP.openpilotLongitudinalControl
+
     ret.blockPcmEnable = not self.recent_button_interaction()
 
     # low speed steer alert hysteresis logic (only for cars with steer cut off above 10 m/s)
@@ -288,6 +299,17 @@ class CarState(CarStateBase):
     ret.buttonEvents = [*create_button_events(self.cruise_buttons[-1], prev_cruise_buttons, BUTTONS_DICT),
                         *create_button_events(self.main_buttons[-1], prev_main_buttons, {1: ButtonType.mainCruise}),
                         *create_button_events(self.lda_button, prev_lda_button, {1: ButtonType.lkas})]
+
+    # dp - ALKA: direct tracking - lkas_on follows acc_main. Same story as the non-CAN-FD
+    # path above: safety/modes/hyundai_canfd.h gates its whole 0x1a0 block on
+    # !hyundai_longitudinal, so under openpilot longitudinal panda never updates lkas_on
+    # and cannot arm ALKA. Reporting armed here would just make openpilot command lateral
+    # that panda rejects every frame, so agree with panda instead.
+    if not self.CP.openpilotLongitudinalControl:
+      cp_cruise_info = cp_cam if self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC else cp
+      self.lkas_on = cp_cruise_info.vl["SCC_CONTROL"]["MainMode_ACC"] == 1
+    else:
+      self.lkas_on = False
 
     ret.blockPcmEnable = not self.recent_button_interaction()
 

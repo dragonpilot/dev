@@ -12,6 +12,7 @@ from openpilot.selfdrive.ui.onroad.cameraview import CameraView
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.common.transformations.camera import DEVICE_CAMERAS, DeviceCameraConfig, view_frame_from_device_frame
 from openpilot.common.transformations.orientation import rot_from_euler
+from dragonpilot.selfdrive.ui.onroad.border_indicator import DpBorderIndicator  # dp
 
 OpState = log.SelfdriveState.OpenpilotState
 CALIBRATED = log.ExtrinsicsCalibration.Status.calibrated
@@ -23,6 +24,7 @@ BORDER_COLORS = {
   UIStatus.DISENGAGED: rl.Color(0x12, 0x28, 0x39, 0xFF),  # Blue for disengaged state
   UIStatus.OVERRIDE: rl.Color(0x89, 0x92, 0x8D, 0xFF),  # Gray for override state
   UIStatus.ENGAGED: rl.Color(0x16, 0x7F, 0x40, 0xFF),  # Green for engaged state
+  UIStatus.ALKA: rl.Color(0x22, 0xa0, 0xdc, 0xf1),  # Blue for ALKA state
 }
 
 WIDE_CAM_MAX_SPEED = 10.0  # m/s (22 mph)
@@ -47,6 +49,7 @@ class AugmentedRoadView(CameraView):
     self._hud_renderer = HudRenderer()
     self.alert_renderer = AlertRenderer()
     self.driver_state_renderer = DriverStateRenderer()
+    self._dp_border_indicator = DpBorderIndicator()  # dp
 
   def _render(self, rect):
     # Only render when system is started to avoid invalid data access
@@ -78,11 +81,19 @@ class AugmentedRoadView(CameraView):
     # Render the base camera view
     super()._render(self._content_rect)
 
+    hide_hud = False
+    # dp - the param is authored in km/h; convert here so ui_state carries no derived value
+    hide_hud_speed_ms = ui_state.dp_ui_hide_hud_speed_kph * 0.278
+    if hide_hud_speed_ms > 0. and ui_state.sm['carState'].vEgo > hide_hud_speed_ms:
+      hide_hud = True
+
     # Draw all UI overlays
     self.model_renderer.render(self._content_rect)
-    self._hud_renderer.render(self._content_rect)
+    if not hide_hud:
+      self._hud_renderer.render(self._content_rect)
     self.alert_renderer.render(self._content_rect)
-    self.driver_state_renderer.render(self._content_rect)
+    if not hide_hud:
+      self.driver_state_renderer.render(self._content_rect)
 
     # Custom UI extension point - add custom overlays here
     # Use self._content_rect for positioning within camera bounds
@@ -105,9 +116,13 @@ class AugmentedRoadView(CameraView):
     rl.draw_rectangle_lines_ex(rect, UI_BORDER_SIZE, rl.BLACK)
     border_roundness = 0.12
     border_color = BORDER_COLORS.get(ui_state.status, BORDER_COLORS[UIStatus.DISENGAGED])
+    # dp - ALKA: use ALKA border color when active and disengaged
+    if ui_state.dp_alka_active and ui_state.status == UIStatus.DISENGAGED:
+      border_color = BORDER_COLORS[UIStatus.ALKA]
     border_rect = rl.Rectangle(rect.x + UI_BORDER_SIZE, rect.y + UI_BORDER_SIZE,
                                rect.width - 2 * UI_BORDER_SIZE, rect.height - 2 * UI_BORDER_SIZE)
     rl.draw_rectangle_rounded_lines_ex(border_rect, border_roundness, 10, UI_BORDER_SIZE, border_color)
+    self._dp_border_indicator.render(rect)  # dp
 
   def _switch_stream_if_needed(self, sm):
     if sm['selfdriveState'].experimentalMode and WIDE_CAM in self.available_streams:

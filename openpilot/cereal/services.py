@@ -100,15 +100,15 @@ _services: dict[str, tuple] = {
   # Replacing your own line (rather than appending at a shared anchor) is what makes
   # this merge cleanly across feature branches - keep the blank lines between slots.
 
-  # dp_service_0
+  "controlsStateExt": (True, 100.),
 
-  # dp_service_1
+  "carStateExt": (True, 100.),
 
-  # dp_service_2
+  "modelExt": (True, 20.),
 
-  # dp_service_3
+  "dashyState": (True, 0.),    # Aggregated dashy UI state (optional)
 
-  # dp_service_4
+  "liveGPS": (True, 0.),
 
   # dp_service_5
 

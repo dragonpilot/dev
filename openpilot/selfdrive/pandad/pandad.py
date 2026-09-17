@@ -13,6 +13,11 @@ from openpilot.common.hardware import HARDWARE
 from openpilot.common.swaglog import cloudlog
 
 
+# dp - how long the panda gets to appear before we conclude it is wedged. Measured ~9.6s
+# to come back from a GPIO reset on an o3XL; a bricked panda costs one of these per
+# escalation step, so keep the margin real but bounded.
+PANDA_BOOT_TIMEOUT = 15
+
 def get_expected_signature() -> bytes:
   fn = os.path.join(FW_PATH, McuType.H7.config.app_fn)
   return Panda.get_signature_from_firmware(fn)
@@ -79,17 +84,23 @@ def main() -> None:
   while not do_exit:
     try:
       cloudlog.event("pandad.flash_and_connect", count=count)
-      if (count % 2) == 0:
-        HARDWARE.reset_internal_panda()
-      else:
-        HARDWARE.recover_internal_panda()
-      count += 1
-
       # Flash all Pandas in DFU mode
       for serial in PandaDFU.list():
         cloudlog.info(f"Panda in DFU mode found, flashing recovery {serial}")
         PandaDFU(serial).recover()
         time.sleep(1)
+
+      # dp - the panda is not always on the bus the instant pandad looks: it may still be
+      # booting, and a GPIO reset takes it off for ~10s on some boards. Panda.list() gives
+      # up in ~10ms, so upstream saw nothing, bounced a healthy panda, and escalated it to
+      # DFU + a full reflash on every boot. Wait for it; bounce it only if it never shows.
+      # A recover_internal_panda() lands it in DFU, which the scan above picks up next pass.
+      if not Panda.wait_for_panda(None, PANDA_BOOT_TIMEOUT):
+        if (count % 2) == 0:
+          HARDWARE.reset_internal_panda()
+        else:
+          HARDWARE.recover_internal_panda()
+      count += 1
 
       panda_serials = Panda.list()
       if len(panda_serials):

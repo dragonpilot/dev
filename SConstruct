@@ -89,6 +89,9 @@ allowed_system_libs = {
   "EGL", "GLESv2", "GL",
   "Qt5Charts", "Qt5Core", "Qt5Gui", "Qt5Widgets",
   "dl", "drm", "gbm", "m", "pthread",
+  # dragonpilot: comma3 multi-panda USB (dragonpilot/selfdrive/pandad_tici) + cabana/jotpluggler need libusb.
+  # Upstream removed USB and dropped libusb from this whitelist; we keep aux-panda so re-allow it.
+  "usb-1.0",
 }
 
 def _resolve_lib(env, name):
@@ -156,7 +159,7 @@ env = Environment(
   LIBPATH=[
     "#openpilot/common",
     "#msgq_repo",
-    "#openpilot/selfdrive/pandad",
+    "#dragonpilot/selfdrive/pandad_tici" if "TICI_DOS" in os.environ else "#openpilot/selfdrive/pandad",
     "#rednose_repo/rednose/helpers",
     [x.LIB_DIR for x in pkgs],
   ],
@@ -282,6 +285,7 @@ Export('messaging')
 
 # Build other submodules
 SConscript(['panda/SConscript'])
+SConscript(['panda_tici/SConscript'])
 
 # Build rednose library
 SConscript(['rednose_repo/rednose/SConscript'])
@@ -297,6 +301,7 @@ if arch == "comma_arm64":
 # Build selfdrive
 SConscript([
   'openpilot/selfdrive/pandad/SConscript',
+  'dragonpilot/selfdrive/pandad_tici/SConscript',
   'openpilot/selfdrive/controls/lib/longitudinal_mpc_lib/SConscript',
   'openpilot/selfdrive/locationd/SConscript',
   'openpilot/selfdrive/modeld/SConscript',

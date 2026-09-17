@@ -13,6 +13,7 @@ from openpilot.common.swaglog import cloudlog
 from opendbc.car.car_helpers import interfaces
 from opendbc.car.vehicle_model import VehicleModel
 from openpilot.selfdrive.controls.lib.drive_helpers import clip_curvature
+from dragonpilot.selfdrive.controls.lib.alka import Alka
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 from openpilot.selfdrive.controls.lib.latcontrol_pid import LatControlPID
 from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, STEER_ANGLE_SATURATION_THRESHOLD
@@ -40,8 +41,8 @@ class Controls:
 
     self.sm = messaging.SubMaster(['lateralDelay', 'vehicleParameters', 'lateralTorqueParameters', 'modelV2', 'selfdriveState',
                                    'extrinsicsCalibration', 'deviceMotion', 'longitudinalPlan', 'lateralManeuverPlan', 'carState', 'carOutput',
-                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance'], poll='selfdriveState')
-    self.pm = messaging.PubMaster(['carControl', 'controlsState'])
+                                   'driverMonitoringState', 'onroadEvents', 'driverAssistance', 'carStateExt'], poll='selfdriveState')
+    self.pm = messaging.PubMaster(['carControl', 'controlsState', 'controlsStateExt'])
 
     self.steer_limited_by_safety = False
     self.curvature = 0.0
@@ -61,6 +62,9 @@ class Controls:
       self.LaC = LatControlPID(self.CP, self.CI, DT_CTRL)
     elif self.CP.lateralTuning.which() == 'torque':
       self.LaC = LatControlTorque(self.CP, self.CI, DT_CTRL)
+
+    # dp - ALKA: enabled + min-speed resolved once here (CP/params frozen after init)
+    self.alka = Alka.from_params(self.CP, self.params)
 
   def update(self):
     self.sm.update(15)
@@ -97,7 +101,12 @@ class Controls:
 
     # Check which actuators can be enabled
     standstill = abs(CS.vEgo) <= max(self.CP.minSteerSpeed, 0.3) or CS.standstill
-    CC.latActive = self.sm['selfdriveState'].active and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
+    # dp - ALKA: recompute active state (enabled decided at init; skip work when off)
+    if self.alka.enabled:
+      calibrated = self.sm['extrinsicsCalibration'].calStatus == log.ExtrinsicsCalibration.Status.calibrated
+      gear_ok = CS.gearShifter not in (car.CarState.GearShifter.park, car.CarState.GearShifter.neutral, car.CarState.GearShifter.reverse)
+      self.alka.update(CS.vEgo, self.sm['carStateExt'].lkasOn, gear_ok, calibrated, CS.seatbeltUnlatched, CS.doorOpen)
+    CC.latActive = (self.sm['selfdriveState'].active or self.alka.active) and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
                    (not standstill or self.CP.steerAtStandstill)
     CC.longActive = CC.enabled and not any(e.overrideLongitudinal for e in self.sm['onroadEvents']) and self.CP.openpilotLongitudinalControl
 
@@ -217,6 +226,13 @@ class Controls:
       cs.lateralControlState.torqueState = lac_log
 
     self.pm.send('controlsState', dat)
+
+    # controlsStateExt
+    dat = messaging.new_message('controlsStateExt')
+    dat.valid = True
+    dat.controlsStateExt.alkaActive = self.alka.active
+    dat.controlsStateExt.alkaArmed = self.alka.armed
+    self.pm.send('controlsStateExt', dat)
 
     # carControl
     cc_send = messaging.new_message('carControl')

@@ -18,9 +18,13 @@ from opendbc.car.carlog import carlog
 from opendbc.car.fw_versions import ObdCallback
 from opendbc.car.car_helpers import get_car, interfaces
 from opendbc.car.interfaces import CarInterfaceBase, RadarInterfaceBase
-from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
+if "TICI_DOS" in os.environ:
+  from dragonpilot.selfdrive.pandad_tici import can_capnp_to_list, can_list_to_can_capnp
+else:
+  from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
 from openpilot.selfdrive.car.cruise import VCruiseHelper
 from opendbc.car.dp_params import DP_CAR, DP_CAR_PARAMS_KEYS
+from opendbc.safety import ALTERNATIVE_EXPERIENCE
 
 REPLAY = "REPLAY" in os.environ
 
@@ -67,7 +71,7 @@ class Car:
   def __init__(self, CI=None, RI=None) -> None:
     self.can_sock = messaging.sub_sock('can', timeout=20)
     self.sm = messaging.SubMaster(['pandaStates', 'carControl', 'onroadEvents'])
-    self.pm = messaging.PubMaster(['sendcan', 'carState', 'carParams', 'carOutput', 'radarTracks'])
+    self.pm = messaging.PubMaster(['sendcan', 'carState', 'carParams', 'carOutput', 'radarTracks', 'carStateExt'])
 
     self.can_rcv_cum_timeout_counter = 0
 
@@ -97,6 +101,7 @@ class Car:
           break
 
       alpha_long_allowed = self.params.get_bool("AlphaLongitudinalEnabled")
+      num_pandas = len(messaging.recv_one_retry(self.sm.sock['pandaStates']).pandaStates)
 
       cached_params = None
       cached_params_raw = self.params.get("CarParamsCache")
@@ -104,7 +109,7 @@ class Car:
         with car.CarParams.from_bytes(cached_params_raw) as _cached_params:
           cached_params = _cached_params
 
-      self.CI = get_car(*self.can_callbacks, obd_callback(self.params), alpha_long_allowed, is_release, cached_params)
+      self.CI = get_car(*self.can_callbacks, obd_callback(self.params), alpha_long_allowed, is_release, num_pandas, cached_params)
       self.RI = interfaces[self.CI.CP.carFingerprint].RadarInterface(self.CI.CP)
       self.CP = self.CI.CP
 
@@ -114,7 +119,15 @@ class Car:
       self.CI, self.CP = CI, CI.CP
       self.RI = RI
 
+    if self.params.get_bool("dp_lon_ext_radar"):
+      from opendbc.car.radar_interface import RadarInterface
+      self.RI = RadarInterface(self.CI.CP)
+
     self.CP.alternativeExperience = 0
+    # dp - ALKA: set alternative experience flag if ALKA is enabled
+    if DP_CAR["dp_lat_alka"]:
+      self.CP.alternativeExperience |= ALTERNATIVE_EXPERIENCE.ALKA
+
     openpilot_enabled_toggle = self.params.get_bool("OpenpilotEnabledToggle")
     controller_available = self.CI.CC is not None and openpilot_enabled_toggle and not self.CP.dashcamOnly
     self.CP.passive = not controller_available or self.CP.dashcamOnly
@@ -220,6 +233,12 @@ class Car:
     cs_send.carState.canErrorCounter = self.can_rcv_cum_timeout_counter
     cs_send.carState.cumLagMs = -self.rk.remaining * 1000.
     self.pm.send('carState', cs_send)
+
+    # dp - ALKA: publish lkas_on state from carstate
+    cs_ext = messaging.new_message('carStateExt')
+    cs_ext.valid = CS.canValid
+    cs_ext.carStateExt.lkasOn = getattr(self.CI.CS, 'lkas_on', False)
+    self.pm.send('carStateExt', cs_ext)
 
     if RD is not None:
       tracks_msg = messaging.new_message('radarTracks')

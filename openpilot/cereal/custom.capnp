@@ -10,19 +10,61 @@ $Cxx.namespace("cereal");
 # DO rename the structs
 # DON'T change the identifier (e.g. @0x81c2f05a394cf4af)
 
-struct CustomReserved0 @0x81c2f05a394cf4af {
+struct ControlsStateExt @0x81c2f05a394cf4af {
+  # dp - ALKA: two states, deliberately. alkaActive is "steering right now" and gates the
+  # UI path drawing; alkaArmed is "the driver switched ALKA on" and is what soundd chimes
+  # for. Chiming on active meant every stop light below dp_lat_alka_min_speed, and every
+  # shift to reverse, played the enable/disable pair.
+  alkaActive @0 :Bool;
+  alkaArmed @1 :Bool;
 }
 
-struct CustomReserved1 @0xaedffd8f31e7b55d {
+struct CarStateExt @0xaedffd8f31e7b55d {
+  # dp - ALKA: lkasOn state from carstate (mirrors panda's lkas_on)
+  lkasOn @0 :Bool;
 }
 
-struct CustomReserved2 @0xf35cc4560bbf6ec2 {
+struct ModelExt @0xf35cc4560bbf6ec2 {
+  leftEdgeDetected @0 :Bool;
+  rightEdgeDetected @1 :Bool;
 }
 
-struct CustomReserved3 @0xda96579883444c35 {
+struct DashyState @0xda96579883444c35 {
+  # Pre-serialized JSON bytes for dashy UI
+  # Aggregates all topics needed by dashy into single message
+  json @0 :Data;
 }
 
-struct CustomReserved4 @0x80ae746ee2596b11 {
+struct LiveGPS @0x80ae746ee2596b11 {
+  # Position
+  latitude @0 :Float64;                # degrees
+  longitude @1 :Float64;               # degrees
+  altitude @2 :Float64;                # meters (WGS84)
+
+  # Motion
+  speed @3 :Float32;                   # m/s (horizontal speed)
+  bearingDeg @4 :Float32;              # degrees (heading)
+
+  # Accuracy
+  horizontalAccuracy @5 :Float32;      # meters
+  verticalAccuracy @6 :Float32;        # meters
+
+  # Status
+  gpsOK @7 :Bool;                      # livePose valid + GPS fresh
+  status @8 :Status;
+
+  enum Status {
+    uninitialized @0;    # no GPS data yet
+    uncalibrated @1;     # has GPS but fusion not ready (raw passthrough)
+    valid @2;            # fusion active with calibrated bearing
+  }
+
+  # Metadata
+  unixTimestampMillis @9 :Int64;
+  lastGpsTimestamp @10 :UInt64;        # logMonoTime of last GPS
+
+  # livePose health (for debugging fusion issues)
+  livePoseOk @11 :Bool;                # livePose valid and providing orientation/velocity
 }
 
 struct CustomReserved5 @0xa5cd762cd951a455 {

@@ -23,6 +23,7 @@ class UIStatus(Enum):
   DISENGAGED = "disengaged"
   ENGAGED = "engaged"
   OVERRIDE = "override"
+  ALKA = "alka"
 
 
 class UIState:
@@ -60,6 +61,8 @@ class UIState:
         "vehicleParameters",
         "testJoystick",
         "rawAudioData",
+        "controlsStateExt",
+        "radarTracks", # dp - for dp_ui_lead
       ]
     )
 
@@ -98,6 +101,10 @@ class UIState:
     self._offroad_transition_callbacks: list[Callable[[], None]] = []
     self._engaged_transition_callbacks: list[Callable[[], None]] = []
     self._on_body_changed_callbacks: list[Callable[[], None]] = []
+
+    # dp - ALKA
+    self.dp_alka_active: bool = False
+
 
     # dp - apply every declared UI param as an attribute named after its param key
     # (self.dp_ui_rainbow, ...). Features declare "ui_param": True in their own
@@ -157,7 +164,9 @@ class UIState:
     # Handle wide road camera state updates
     if self.sm.updated["wideRoadCameraState"]:
       cam_state = self.sm["wideRoadCameraState"]
-      self.light_sensor = max(100.0 - cam_state.exposureValPercent, 0.0)
+      # rick - for c3: Scale factor based on sensor type
+      scale = 6.0 if cam_state.sensor == 'ar0231' else 1.0
+      self.light_sensor = max(100.0 - scale * cam_state.exposureValPercent, 0.0)
     elif not self.sm.alive["wideRoadCameraState"] or not self.sm.valid["wideRoadCameraState"]:
       self.light_sensor = -1
 
@@ -169,6 +178,14 @@ class UIState:
       self.is_body = self.CP.notCar
       for callback in self._on_body_changed_callbacks:
         callback()
+
+    # dp - ALKA
+    if self.sm.updated["controlsStateExt"]:
+      self.dp_alka_active = self.sm["controlsStateExt"].alkaActive
+    # dp
+    self.dp_ui_display_mode = int(self.params.get("dp_ui_display_mode") or 0)
+    self.dp_ui_display_mode_cruise_available = False
+    self.dp_ui_display_mode_cruise_enabled = False
 
   def _update_status(self) -> None:
     if self.started and self.sm.updated["selfdriveState"]:
@@ -197,6 +214,11 @@ class UIState:
         callback()
 
       self._started_prev = self.started
+
+    # dp
+    if self.sm.updated["carState"]:
+      self.dp_ui_display_mode_cruise_available = self.sm["carState"].cruiseState.available
+      self.dp_ui_display_mode_cruise_enabled = self.sm["carState"].cruiseState.enabled
 
   def update_params(self) -> None:
     # For slower operations
@@ -252,8 +274,8 @@ class Device:
     if self._override_interactive_timeout is not None:
       return self._override_interactive_timeout
 
-    ignition_timeout = 10 if gui_app.big_ui() else 5
-    return ignition_timeout if ui_state.ignition else 30
+    ignition_timeout = 30 if gui_app.big_ui() else 5
+    return ignition_timeout if ui_state.ignition else 60
 
   def _reset_interactive_timeout(self) -> None:
     self._interaction_time = time.monotonic() + self.interactive_timeout
@@ -311,6 +333,48 @@ class Device:
       self._brightness_event.set()
       self._last_brightness = brightness
 
+  # // Display Mode
+  # // 0 Std. - Stock behavior.
+  # // 1 MAIN+ - ACC MAIN on = Display ON
+  # // 2 OP+ - OP enabled = Display ON
+  # // 3 MAIN- - ACC MAIN on = Display OFF
+  # // 4 OP- - OP enabled = Display OFF
+  def _ignition_state_ovrride(self, ignition):
+    # 0 stock behaviour or ignition is off
+    if ui_state.dp_ui_display_mode == 0 or not ignition:
+      return ignition
+
+    # 1 MAIN+ - ACC MAIN on = Display ON
+    if ui_state.dp_ui_display_mode == 1:
+      if ui_state.dp_ui_display_mode_cruise_available:
+        return True
+      else:
+        return False
+
+    # 2 OP+ - OP enabled = Display ON
+    if ui_state.dp_ui_display_mode == 2:
+      if ui_state.dp_ui_display_mode_cruise_enabled:
+        return True
+      else:
+        return False
+
+    # 3 MAIN- - ACC MAIN on = Display OFF
+    if ui_state.dp_ui_display_mode == 3:
+      if ui_state.dp_ui_display_mode_cruise_available:
+        return False
+      else:
+        return True
+
+    # 4 OP- - OP enabled = Display OFF
+    if ui_state.dp_ui_display_mode == 4:
+      if ui_state.dp_ui_display_mode_cruise_enabled:
+        return False
+      else:
+        return True
+
+    # oops
+    return ignition
+
   def _update_wakefulness(self):
     # Handle interactive timeout
     ignition_just_turned_off = not ui_state.ignition and self._ignition
@@ -325,7 +389,9 @@ class Device:
         callback()
     self._prev_timed_out = interaction_timeout
 
-    self._set_awake(ui_state.ignition or not interaction_timeout or PC)
+    ignition = self._ignition_state_ovrride(ui_state.ignition)
+
+    self._set_awake(ignition or not interaction_timeout or PC)
 
   def _set_awake(self, on: bool):
     if on != self._awake:

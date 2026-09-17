@@ -109,6 +109,17 @@ class State(Enum):
 
 STATE_WAIT = 1.0  # seconds to wait after each state handler returns
 
+# dp - no-SIM backoff: after INIT_FAST_RETRIES failed identity reads, stop hammering
+# every STATE_WAIT and instead probe every NO_SIM_POLL_INTERVAL with a CFUN 0/1 SIM
+# re-init first. Hot-swap detect (QSIMDET) is off on the C3, so the modem never
+# re-scans the slot on its own - without the re-init a swapped-in SIM is invisible.
+INIT_FAST_RETRIES = 10
+NO_SIM_POLL_INTERVAL = 10.0  # seconds
+# dp - consecutive ICCID read failures after which we assume the SIM was removed and
+# reconnect (routes SEARCHING/CONNECTED into the no-SIM backoff above). >1 so a
+# transient AT timeout or the LPA briefly holding the port lock can't drop a session.
+ICCID_FAIL_LIMIT = 5
+
 
 class PPPSession:
   """Owns pppd lifecycle, fail tracking, and PPP routing."""
@@ -207,6 +218,153 @@ class PPPSession:
     subprocess.run(["sudo", "resolvectl", "revert", "ppp0"], capture_output=True)
 
 
+# ============================================================================
+# dragonpilot: QMI data path for the comma3 (tici) EG25
+#
+# The comma3 EG25 runs in QMI mode (AT+QCFG="usbnet"==0) and does NOT support
+# *99# PPP data: pppd negotiates LCP/PAP then the modem drops at IPCP, so the
+# PPP-only upstream daemon never gets an IP. QMISession is a drop-in for
+# PPPSession (same interface the Modem state machine uses) that brings data up
+# over QMI on wwan0 via qmicli. It is selected automatically in _do_initializing
+# when the modem reports QMI mode; everything else (AT init, registration,
+# polling, /dev/shm/modem) is unchanged. Kept self-contained to ease upstream
+# modem.py merges.
+# ============================================================================
+QMI_DEV = "/dev/cdc-wdm0"
+QMI_IFACE = "wwan0"
+QMI_POLL_INTERVAL = 10.0  # s; how often to actually query the modem while connected (drop detection latency)
+
+
+class QMISession:
+  """Drop-in for PPPSession that connects over QMI/wwan0 instead of *99# PPP."""
+  MAX_FAILS = 3
+  IFACE = QMI_IFACE
+
+  def __init__(self):
+    self._fails = 0
+    self._ip = ""
+    self._last_status_check = 0.0
+
+  @staticmethod
+  def available() -> bool:
+    return os.path.exists(QMI_DEV)
+
+  @staticmethod
+  def _param(key):
+    try:
+      with open(f"/data/params/d/{key}") as f:
+        return f.read().strip()
+    except FileNotFoundError:
+      return ""
+
+  @staticmethod
+  def _qmicli(*args, timeout=30):
+    return subprocess.run(["sudo", "qmicli", "-d", QMI_DEV, "-p", *args],
+                          capture_output=True, text=True, timeout=timeout)
+
+  def start(self):
+    apn = self._param("GsmApn")
+    # qmi_wwan needs raw-ip mode for IPv4; set it while the iface is down
+    subprocess.run(["sudo", "ip", "link", "set", QMI_IFACE, "down"], capture_output=True)
+    subprocess.run(["sudo", "sh", "-c", f"echo Y > /sys/class/net/{QMI_IFACE}/qmi/raw_ip"], capture_output=True)
+    subprocess.run(["sudo", "ip", "link", "set", QMI_IFACE, "up"], capture_output=True)
+    net = "ip-type=4" + (f",apn={apn}" if apn else "")
+    r = self._qmicli(f"--wds-start-network={net}", "--client-no-release-cid")
+    if r.returncode != 0:
+      # dp - surface the 3GPP call-end reason (e.g. cause 33 = wrong APN for this SIM);
+      # the state machine still notices via has_exited() and retries
+      logging.warning(f"QMI start-network failed: {' '.join((r.stderr or r.stdout).split())}")
+    self._ip = ""
+    self._last_status_check = time.monotonic()  # give the bearer an interval before the first drop check
+    logging.info(f"QMI start-network on {QMI_IFACE} (apn={apn or '(network-provided)'})")
+
+  def kill(self):
+    self.cleanup_routes()
+    subprocess.run(["sudo", "ip", "addr", "flush", "dev", QMI_IFACE], capture_output=True)
+    subprocess.run(["sudo", "ip", "link", "set", QMI_IFACE, "down"], capture_output=True)
+    self._ip = ""
+
+  @staticmethod
+  def reset_data_port():
+    pass  # no DTR/serial data port for QMI
+
+  def has_exited(self) -> bool:
+    # Throttle: querying the modem every loop (1s) is wasteful and the link is stable.
+    # Between checks assume still up -> a drop is detected within QMI_POLL_INTERVAL.
+    now = time.monotonic()
+    if now - self._last_status_check < QMI_POLL_INTERVAL:
+      return False
+    self._last_status_check = now
+    r = self._qmicli("--wds-get-packet-service-status", timeout=10)
+    return "disconnected" in r.stdout.lower()
+
+  def reset_fail_counter(self):
+    self._fails = 0
+
+  def record_fail(self) -> bool:
+    self._fails += 1
+    return self._fails >= self.MAX_FAILS
+
+  @property
+  def fails(self) -> int:
+    return self._fails
+
+  def _settings(self):
+    r = self._qmicli("--wds-get-current-settings", timeout=10)
+    def grab(label):
+      for line in r.stdout.splitlines():
+        if label in line:
+          return line.split(":", 1)[1].strip()
+      return ""
+    dns = [d for d in (grab("IPv4 primary DNS"), grab("IPv4 secondary DNS")) if d]
+    return grab("IPv4 address"), grab("IPv4 gateway address"), grab("IPv4 subnet mask"), dns
+
+  @staticmethod
+  def cleanup_routes():
+    subprocess.run(["sudo", "ip", "route", "del", "default", "dev", QMI_IFACE], capture_output=True)
+    subprocess.run(["sudo", "ip", "route", "flush", "table", "1000"], capture_output=True)
+    while subprocess.run(["sudo", "ip", "rule", "del", "table", "1000"], capture_output=True).returncode == 0:
+      pass
+    subprocess.run(["sudo", "resolvectl", "revert", QMI_IFACE], capture_output=True)
+
+  def poll_iface(self) -> dict:
+    # The IP is stable for the whole session, so configure wwan0 once and then
+    # serve the cached value -- no qmicli per loop. _ip is cleared on (re)start.
+    if self._ip:
+      return {"ip_address": self._ip, "connected": True}
+    ip, gw, mask, dns = self._settings()
+    if not (ip and gw):
+      return {"connected": False, "ip_address": ""}
+    try:
+      IPv4Address(ip)
+      IPv4Address(gw)
+    except AddressValueError:
+      logging.warning(f"refusing route install with non-IPv4 ip={ip!r} gw={gw!r}")
+      return {}
+    prefix = sum(bin(int(o)).count("1") for o in mask.split(".")) if mask.count(".") == 3 else 32
+    self.cleanup_routes()
+    subprocess.run(["sudo", "ip", "addr", "flush", "dev", QMI_IFACE], capture_output=True)
+    cmds = [
+      ["sudo", "ip", "addr", "add", f"{ip}/{prefix}", "dev", QMI_IFACE],
+      ["sudo", "ip", "link", "set", QMI_IFACE, "up"],
+      ["sudo", "ip", "route", "add", "default", "via", gw, "dev", QMI_IFACE, "metric", "1000"],
+      ["sudo", "ip", "route", "add", "default", "via", gw, "dev", QMI_IFACE, "table", "1000"],
+      ["sudo", "ip", "rule", "add", "from", ip, "table", "1000"],
+    ]
+    for cmd in cmds:
+      r = subprocess.run(cmd, capture_output=True, text=True)
+      if r.returncode != 0:
+        logging.warning(f"qmi route install failed ({' '.join(cmd[1:])}): {r.stderr.strip()}")
+        self.cleanup_routes()
+        return {}
+    if dns:
+      subprocess.run(["sudo", "resolvectl", "dns", QMI_IFACE, *dns], capture_output=True)
+      subprocess.run(["sudo", "resolvectl", "default-route", QMI_IFACE, "yes"], capture_output=True)
+    self._ip = ip
+    logging.info(f"QMI {ip}/{prefix} via {gw} on {QMI_IFACE}, dns={dns}")
+    return {"ip_address": ip, "connected": True}
+
+
 class Modem:
   def __init__(self):
     self._ppp = PPPSession()
@@ -215,6 +373,9 @@ class Modem:
     self._roaming_allowed = True
     self.running = True
     self.S = INITIAL_STATE.copy()
+    self._init_fails = 0        # dp - consecutive incomplete identity reads
+    self._init_next_try = 0.0   # dp - monotonic deadline for the next no-SIM probe
+    self._iccid_fails = 0       # dp - consecutive failed ICCID polls (SIM-removal detect)
 
   @staticmethod
   def _read_param(key):
@@ -302,11 +463,18 @@ class Modem:
     cmds = [
       # clear initial EPS bearer APN (some carriers reject the default)
       'AT+CGDCONT=0,"IP",""',
+    ]
 
-      # SIM hot swap
-      'AT+QSIMDET=1,0',
-      'AT+QSIMSTAT=1',
+    # SIM hot swap: skip on the comma3 (TICI_DOS) - matches openpilot v0.10.0, which
+    # only sent these on tizi (C3X). Enabling SIM-detect on the C3 can cause
+    # spurious SIM-removed events and drop the connection.
+    if "TICI_DOS" not in os.environ:
+      cmds += [
+        'AT+QSIMDET=1,0',
+        'AT+QSIMSTAT=1',
+      ]
 
+    cmds += [
       # configure modem as data-centric
       'AT+QNVW=5280,0,"0102000000000000"',
       'AT+QNVFW="/nv/item_files/ims/IMS_enable",00',
@@ -315,7 +483,13 @@ class Modem:
     for c in cmds:
       self._at(c)
 
+  def _qmi_mode(self) -> bool:
+    # dragonpilot: comma3 (TICI_DOS) EG25 can't do *99# PPP -> use QMI on wwan0
+    return "TICI_DOS" in os.environ and QMISession.available()
+
   def _do_initializing(self):
+    if time.monotonic() < self._init_next_try:  # dp - no-SIM backoff window
+      return State.INITIALIZING
     if not os.path.exists(AT_PORT):
       return State.INITIALIZING
     logging.info("port found, initializing")
@@ -328,10 +502,30 @@ class Modem:
 
     identity = self._read_identity()
     if not identity["iccid"] or not identity["imei"]:
-      logging.warning(f"identity read incomplete: {identity}, retrying")
+      # dp - back off after repeated failures; re-init the SIM interface each slow
+      # probe so a SIM inserted while running gets picked up (QSIMDET is off on C3)
+      self._init_fails += 1
+      if self._init_fails < INIT_FAST_RETRIES:
+        logging.warning(f"identity read incomplete: {identity}, retrying")
+        return State.INITIALIZING
+      logging.warning(f"no SIM after {self._init_fails} attempts, SIM re-init + next probe in {NO_SIM_POLL_INTERVAL:.0f}s")
+      self._publish_state(**identity)  # expose imei/modem_version even without a SIM
+      self._at("AT+CFUN=0")
+      time.sleep(1)
+      self._at("AT+CFUN=1")
+      self._init_next_try = time.monotonic() + NO_SIM_POLL_INTERVAL
       return State.INITIALIZING
+    self._init_fails = 0
+    self._init_next_try = 0.0
 
     self._configure_modem(identity["modem_version"])
+
+    # dragonpilot: switch the data session to QMI once if the modem is QMI-mode (comma3 EG25)
+    if not isinstance(self._ppp, QMISession) and self._qmi_mode():
+      self._ppp.kill()
+      self._ppp.cleanup_routes()
+      self._ppp = QMISession()
+      logging.info("using QMI data path (wwan0)")
 
     self.S.update(identity)
     self._apn = self._read_param("GsmApn")
@@ -433,8 +627,17 @@ class Modem:
     if state in (State.INITIALIZING, State.DISCONNECTING) or not self.S["iccid"]:
       return
     iccid = (self._atv("AT+QCCID", "+QCCID:") or "").rstrip("F")
-    if iccid and iccid != self.S["iccid"]:
-      logging.warning(f"iccid changed: {self.S['iccid']} -> {iccid}")
+    if iccid:
+      self._iccid_fails = 0
+      if iccid != self.S["iccid"]:
+        logging.warning(f"iccid changed: {self.S['iccid']} -> {iccid}")
+        self._sim_change = True
+      return
+    # dp - repeated read failures with a SIM we could previously read = SIM removed
+    self._iccid_fails += 1
+    if self._iccid_fails >= ICCID_FAIL_LIMIT:
+      logging.warning(f"iccid unreadable {self._iccid_fails} times, assuming SIM removed")
+      self._iccid_fails = 0
       self._sim_change = True
 
   def _do_connected(self):
@@ -509,6 +712,8 @@ class Modem:
       return {}
 
   def _poll_iface(self) -> dict:
+    if isinstance(self._ppp, QMISession):  # dragonpilot: QMI handles its own iface/routes/dns
+      return self._ppp.poll_iface()
     try:
       r = subprocess.run(["ip", "-4", "addr", "show", "ppp0"], capture_output=True, text=True, timeout=2)
       ip, peer = "", ""
@@ -552,10 +757,11 @@ class Modem:
     return dns_servers
 
   def _poll_byte_counters(self) -> dict:
+    iface = getattr(self._ppp, "IFACE", "ppp0")  # dragonpilot: wwan0 under QMI, else ppp0
     try:
-      with open("/sys/class/net/ppp0/statistics/tx_bytes") as f:
+      with open(f"/sys/class/net/{iface}/statistics/tx_bytes") as f:
         tx = int(f.read().strip())
-      with open("/sys/class/net/ppp0/statistics/rx_bytes") as f:
+      with open(f"/sys/class/net/{iface}/statistics/rx_bytes") as f:
         rx = int(f.read().strip())
     except Exception:
       return {}

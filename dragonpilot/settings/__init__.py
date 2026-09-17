@@ -53,6 +53,9 @@ SECTION_ORDER = [
   "Longitudinal",
   "UI",
   "Device",
+  # Upstream openpilot toggle mirrors (dashy-only, gated by `condition: "DASHY"`).
+  "Openpilot",
+  "Developer",
 ]
 
 # Brand-gated sections: the whole header + its items are hidden when the
@@ -79,6 +82,11 @@ _KNOWN_ITEM_KEYS = _UI_REQUIRED_KEYS | {
   # Speed items are authored in km/h; panel converts display range + suffix
   # to km/h or mph per IsMetric. Ignored by generate_settings.py.
   "unit",
+  # Dashy-only fields (no factory on the device dp panel; web UI consumes them).
+  # text_display_item: read-only render of a param's value.
+  # text_input_item: text field that POSTs typed value to the named action endpoint.
+  # action_item: button that POSTs to the named action endpoint with no payload.
+  "action",
   # Param-storage fields (consumed by generate_settings.py, ignored by UI)
   "flags", "param_type",
   # Exposes this param to a consumer, via a table generate_dp_params.py writes at
