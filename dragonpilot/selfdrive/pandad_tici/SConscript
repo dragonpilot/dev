@@ -10,5 +10,6 @@ env.Program('pandad', ['main.cc', 'pandad.cc', 'panda_safety.cc'], LIBS=[panda] 
 # capnp serialization is hardware-agnostic (shared cereal schema), so c3 and c3X
 # use the same code. This avoids the c3X link failure from the old Cython path.
 
-if GetOption('extras'):
-  env.Program('tests/test_pandad_usbprotocol', ['tests/test_pandad_usbprotocol.cc'], LIBS=[panda] + libs)
+# No C++ test is vendored here: upstream's test_pandad_usbprotocol.cc was renamed to
+# test_pandad_canprotocol.cc in 0.11.2 and pandad_tici/tests/ has never carried a copy.
+# Referencing it aborted every --extras build.
