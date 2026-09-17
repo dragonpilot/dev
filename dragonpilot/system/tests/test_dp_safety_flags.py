@@ -29,9 +29,9 @@ exactly the case the per-feature assertion catches.
 import re
 from pathlib import Path
 
-import pytest
+from openpilot.common.test import OpenpilotTestCase
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 CAR = REPO / "opendbc_repo" / "opendbc" / "car"
 SAF = REPO / "opendbc_repo" / "opendbc" / "safety" / "modes"
 
@@ -146,35 +146,37 @@ def _shared_cases():
   for brand, (cls, headers, prefix) in PAIRS.items():
     py, c = _py_members(brand, cls), _c_members(headers, prefix)
     for name in sorted(set(py) & set(c)):
-      cases.append(pytest.param(brand, name, py[name], c[name], id=f"{brand}-{name}"))
+      cases.append((brand, name, py[name], c[name]))
   return cases
 
 
-@pytest.mark.parametrize("brand,flag,py_value,c_value", _shared_cases())
-def test_safety_flag_matches_header(brand, flag, py_value, c_value):
-  """A mismatch means panda applies a different flag than the car code set."""
-  assert py_value == c_value, (
-    f"{brand}: SafetyFlags.{flag}={py_value} but C {PAIRS[brand][2]} {flag}={c_value}. "
-    f"These cross to panda - renumber the car-side <Brand>Flags enum instead."
-  )
+class TestDpSafetyFlags(OpenpilotTestCase):
 
+  def test_safety_flag_matches_header(self):
+    """A mismatch means panda applies a different flag than the car code set."""
+    for brand, flag, py_value, c_value in _shared_cases():
+      with self.subTest(brand=brand, flag=flag):
+        assert py_value == c_value, (
+          f"{brand}: SafetyFlags.{flag}={py_value} but C {PAIRS[brand][2]} {flag}={c_value}. "
+          + "These cross to panda - renumber the car-side <Brand>Flags enum instead."
+        )
 
-@pytest.mark.parametrize("brand", sorted(PAIRS))
-def test_no_unexpected_one_sided_safety_flag(brand):
-  """A flag on only one side is usually a feature that updated python or C, not both."""
-  cls, headers, prefix = PAIRS[brand]
-  py, c = _py_members(brand, cls), _c_members(headers, prefix)
-  py_only = set(py) - set(c) - ALLOWED_PY_ONLY.get(brand, set())
-  c_only = set(c) - set(py) - ALLOWED_C_ONLY.get(brand, set())
-  assert not py_only, f"{brand}: {cls} has {sorted(py_only)} with no C counterpart in {headers}"
-  assert not c_only, f"{brand}: C {prefix} {sorted(c_only)} has no {cls} counterpart"
+  def test_no_unexpected_one_sided_safety_flag(self):
+    """A flag on only one side is usually a feature that updated python or C, not both."""
+    for brand in sorted(PAIRS):
+      with self.subTest(brand=brand):
+        cls, headers, prefix = PAIRS[brand]
+        py, c = _py_members(brand, cls), _c_members(headers, prefix)
+        py_only = set(py) - set(c) - ALLOWED_PY_ONLY.get(brand, set())
+        c_only = set(c) - set(py) - ALLOWED_C_ONLY.get(brand, set())
+        assert not py_only, f"{brand}: {cls} has {sorted(py_only)} with no C counterpart in {headers}"
+        assert not c_only, f"{brand}: C {prefix} {sorted(c_only)} has no {cls} counterpart"
 
-
-def test_pairings_are_all_found():
-  """Guard the test itself: if a rename silently empties a side, the cases above vanish
-  and everything 'passes'."""
-  assert len(PAIRS) >= 9, f"only discovered {sorted(PAIRS)} - has the layout changed?"
-  for brand, (cls, headers, prefix) in PAIRS.items():
-    py = _py_members(brand, cls)
-    assert py, f"{brand}: no members parsed from {cls} - has it been renamed?"
-    assert headers, f"{brand}: no {brand}*.h headers found under {SAF}"
+  def test_pairings_are_all_found(self):
+    """Guard the test itself: if a rename silently empties a side, the cases above vanish
+    and everything 'passes'."""
+    assert len(PAIRS) >= 9, f"only discovered {sorted(PAIRS)} - has the layout changed?"
+    for brand, (cls, headers, _prefix) in PAIRS.items():
+      py = _py_members(brand, cls)
+      assert py, f"{brand}: no members parsed from {cls} - has it been renamed?"
+      assert headers, f"{brand}: no {brand}*.h headers found under {SAF}"
