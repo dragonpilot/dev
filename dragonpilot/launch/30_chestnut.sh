@@ -8,9 +8,12 @@
 # stays false, and the whole eGPU path is dead. mici does not need this: its port is
 # not OTG-shared.
 #
-# Runs at 30_ so it is after set_aux_panda (10_) has had its turn at the port.
+# Runs at 30_ so set_aux_panda (10_) has had its turn at the port. tici-only on purpose:
+# mici's port is not OTG-shared, and tizi has not been looked at.
 
 set_chestnut_hw() {
+  grep -q "tici" /sys/firmware/devicetree/base/model 2>/dev/null || return 0
+
   local mode="/sys/devices/platform/soc/a600000.ssusb/mode"
   [ -e "$mode" ] || return 0
 
