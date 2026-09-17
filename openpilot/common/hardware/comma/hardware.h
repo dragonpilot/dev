@@ -7,6 +7,7 @@
 #include <algorithm>  // for std::clamp
 
 #include "common/util.h"
+#include "common/swaglog.h"
 #include "common/hardware/base.h"
 
 class HardwareComma : public HardwareNone {
@@ -21,12 +22,24 @@ public:
 
   static cereal::InitData::DeviceType get_device_type() {
     static const std::map<std::string, cereal::InitData::DeviceType> device_map = {
+      // dp - upstream dropped tici from this map in 0.11.2 but kept it everywhere else:
+      // hardware.py:113/392, soundd.py:33, amplifier.py:144 and log.capnp's `tici @4`.
+      // comma three is still supported here, and 3X-class clones report "comma tici".
+      {"tici", cereal::InitData::DeviceType::TICI},
       {"tizi", cereal::InitData::DeviceType::TIZI},
       {"mici", cereal::InitData::DeviceType::MICI}
     };
-    static const auto it = device_map.find(get_name());
-    assert(it != device_map.end());
-    return it->second;
+    static const cereal::InitData::DeviceType type = []() {
+      auto it = device_map.find(get_name());
+      if (it == device_map.end()) {
+        // dp - assert is live in every build (NDEBUG is never set), so an unrecognised
+        // model killed pandad outright. A third-party device can report anything.
+        LOGE("unknown device model '%s', reporting unknown", get_name().c_str());
+        return cereal::InitData::DeviceType::UNKNOWN;
+      }
+      return it->second;
+    }();
+    return type;
   }
 
   static std::string get_serial() {
