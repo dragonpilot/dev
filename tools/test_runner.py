@@ -134,9 +134,15 @@ def module_name(path):
   return ".".join(path.resolve().relative_to(ROOT).with_suffix("").parts)
 
 
+# dp - a bare run collects `openpilot` only, so dragonpilot's own tests and dp's safety
+# tests are reached by nothing unless named explicitly. Same gap dp fixed on 0.11.1 via
+# pytest testpaths; 0.11.2 dropped pytest, so the default lives here instead.
+DEFAULT_TARGETS = ["openpilot", "dragonpilot", "opendbc_repo/opendbc/safety/tests"]
+
+
 def collect(targets, keyword):
   use_ignores = not targets
-  targets = targets or ["openpilot"]
+  targets = targets or DEFAULT_TARGETS
   loader = unittest.TestLoader()
   tests = []
   errors = []
