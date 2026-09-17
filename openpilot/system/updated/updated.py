@@ -355,6 +355,11 @@ class Updater:
     output = run(["git", "ls-remote", "--heads"], OVERLAY_MERGED)
 
     self.branches.clear()
+    # dp - selectable update channels, matched by exact name. 'alpha' is unproven
+    # feature work, 'pre-release' soaks before promotion, 'release' is stable.
+    # 'testing'/'pre-build' are the pre-rename names, kept so devices still on
+    # them can see an update and migrate; drop once none report those branches.
+    channels = ('alpha', 'pre-release', 'release', 'testing', 'pre-build')
     for line in output.split('\n'):
       ls_remotes_re = r'(?P<commit_sha>\b[0-9a-f]{5,40}\b)(\s+)(refs\/heads\/)(?P<branch_name>.*$)'
       x = re.fullmatch(ls_remotes_re, line.strip())
@@ -369,9 +374,9 @@ class Updater:
         m = re.match(r'^(\d+)\.(\d+)\.(\d+)', name)
 
         # Logic:
-        # 1. Allow exactly 'pre-build'
+        # 1. Allow a named channel (see `channels` above)
         # 2. OR Allow if it parses as a version AND that version is >= 0.9.8
-        if name in ('testing', 'pre-build') or (m and tuple(map(int, m.groups())) >= (0, 9, 8)):
+        if name in channels or (m and tuple(map(int, m.groups())) >= (0, 9, 8)):
           self.branches[name] = x.group('commit_sha')
 
     cur_branch = self.get_branch(OVERLAY_MERGED)
