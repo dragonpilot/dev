@@ -310,11 +310,19 @@ SConscript([
 
 # Build desktop-only tools
 if GetOption('extras') and arch != "comma_arm64":
-  SConscript([
+  extra_scripts = [
     'openpilot/tools/replay/SConscript',
-    'openpilot/tools/cabana/SConscript',
     'openpilot/tools/jotpluggler/SConscript',
-  ])
+  ]
+  # dp - cabana needs SCons's 'qt3' tool, which SCons >= 4.6 no longer ships. Listing it
+  # unconditionally aborts the whole extras build, taking replay and jotpluggler with it.
+  try:
+    import SCons.Tool
+    SCons.Tool.Tool('qt3')
+    extra_scripts.insert(1, 'openpilot/tools/cabana/SConscript')
+  except Exception:
+    print("dp: skipping cabana, SCons has no 'qt3' tool")
+  SConscript(extra_scripts)
 
 
 env.CompilationDatabase('compile_commands.json')
