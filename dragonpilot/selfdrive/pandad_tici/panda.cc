@@ -139,7 +139,9 @@ bool Panda::up_to_date() {
   if (auto fw_sig = get_firmware_version()) {
     for (auto fn : { "panda.bin.signed", "panda_h7.bin.signed" }) {
       std::string content;
-      content = util::read_file(std::string("../../panda_tici/board/obj/") + fn);
+      // dp - three levels up, not two: pandad_tici moved to dragonpilot/selfdrive/ in
+      // 0.11.2. Stock panda.cc bumped its own path the same way for the same reason.
+      content = util::read_file(std::string("../../../panda_tici/board/obj/") + fn);
       if (content.size() >= fw_sig->size() &&
           memcmp(content.data() + content.size() - fw_sig->size(), fw_sig->data(), fw_sig->size()) == 0) {
         return true;
