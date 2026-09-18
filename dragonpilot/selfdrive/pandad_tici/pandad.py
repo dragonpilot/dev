@@ -9,7 +9,7 @@ import subprocess
 from panda_tici import Panda, PandaDFU, PandaProtocolMismatch, FW_PATH
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
-from openpilot.common.hardware import HARDWARE
+from openpilot.common.hardware import COMMA_HARDWARE, HARDWARE
 from openpilot.common.swaglog import cloudlog
 
 
@@ -115,8 +115,11 @@ def main() -> None:
         pandas.append(flash_panda(serial))
 
       # Ensure internal panda is present if expected
+      # dp - has_internal_panda() is gone in 0.11.2: every device comma still ships has
+      # one, so the check was always True and they dropped it. COMMA_HARDWARE is the same
+      # distinction 0.11.1 drew - True on a comma device, False on PC.
       internal_pandas = [panda for panda in pandas if panda.is_internal()]
-      if HARDWARE.has_internal_panda() and len(internal_pandas) == 0:
+      if COMMA_HARDWARE and len(internal_pandas) == 0:
         cloudlog.error("Internal panda is missing, trying again")
         no_internal_panda_count += 1
         continue
